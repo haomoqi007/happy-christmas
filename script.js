@@ -3,20 +3,17 @@ const ctx = canvas.getContext('2d');
 
 let width, height;
 let particles = [];
-let backgroundParticles = [];
-// 强制粒子数量，保证画面一定有内容
-const PARTICLE_COUNT = 800; 
+let targets = { tree: [], text: [] };
+let state = 'tree';
 
+// --- 配置 ---
 const config = {
-    text: '圣诞快乐',
-    particleSize: 5, // 调大粒子，模仿LED灯珠感
-    treeWidthRatio: 0.5,
-    treeHeightRatio: 0.75,
-    transitionDelay: 2000, // 2秒后开始变形
-    transitionSpeed: 0.04,
-    fluctuationSpeed: 0.003,
-    fluctuationRange: 4,
-    bgParticleCount: 80 // 背景星星数量
+    particleCount: 1200, // 粒子数量要足够多
+    particleSize: 3, // 灯珠大小
+    transitionSpeed: 0.04, // 变换速度
+    fluctuation: 2, // 波动幅度
+    treeWidthRatio: 0.6,
+    treeHeightRatio: 0.8
 };
 
 function resize() {
@@ -24,200 +21,172 @@ function resize() {
     height = canvas.height = window.innerHeight;
 }
 
-// 颜色生成：模仿你发的图片的蓝-白-金渐变
-function getColor(y) {
-    const contentCenterY = height / 2;
-    const h = height * config.treeHeightRatio;
-    const yRatio = (y - contentCenterY) / (h / 2);
-    
-    // 简单的三段色：上蓝，中白，下红/金
-    let r, g, b;
-    if (yRatio < -0.3) { 
-        // 顶部：亮蓝色 (模仿图片中的蓝色点)
-        return `rgba(50, 150, 255, 1)`;
-    } else if (yRatio < 0.3) {
-        // 中部：白色/青色
-        return `rgba(220, 240, 255, 1)`;
+// --- 核心：生成图2风格的蓝白光色 ---
+function getBlueWhiteColor() {
+    const rand = Math.random();
+    let r, g, b, a = 0.8 + Math.random() * 0.2;
+    if (rand < 0.7) {
+        // 70% 概率是蓝色调 (模仿图中的主色)
+        r = 50 + Math.random() * 50;
+        g = 180 + Math.random() * 75;
+        b = 255;
     } else {
-        // 底部：暖色/红色
-        return `rgba(255, 100, 100, 1)`;
+        // 30% 概率是亮白色/青色 (模仿图中的亮点)
+        r = 220 + Math.random() * 35;
+        g = 240 + Math.random() * 15;
+        b = 255;
     }
+    return `rgba(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)}, ${a})`;
 }
 
+// --- 粒子类 ---
 class Particle {
-    constructor(i) {
-        // 1. 初始化时，先不管文字，强行把粒子摆成圣诞树的样子
-        const treeTopY = height / 2 - (height * config.treeHeightRatio / 2);
-        const treeHeight = height * config.treeHeightRatio;
-        const maxTreeWidth = width * config.treeWidthRatio;
-
-        // 随机生成在三角形内
-        const y = treeTopY + Math.random() * treeHeight;
-        const currentW = maxTreeWidth * ((y - treeTopY) / treeHeight);
-        const x = width / 2 + (Math.random() - 0.5) * currentW;
-
-        this.x = x;
-        this.y = y;
-        
-        // 记录“树”形态的坐标
-        this.treeX = x;
-        this.treeY = y;
-        
-        // “文字”形态的坐标（稍后填充）
-        this.textX = x; 
-        this.textY = y;
-
-        this.size = config.particleSize * (0.8 + Math.random() * 0.5);
-        this.color = getColor(y);
-        this.randomOffset = Math.random() * 100;
+    constructor(index) {
+        this.x = Math.random() * width;
+        this.y = Math.random() * height;
+        // 随机大小，增加真实感
+        this.size = config.particleSize * (0.7 + Math.random() * 0.6); 
+        this.color = getBlueWhiteColor(); // 使用蓝白色调
+        this.targetIndex = index;
+        this.offset = Math.random() * 100; // 随机波动相位
     }
 
-    update(time, state) {
-        // 确定当前要飞向的目标
-        let tx = (state === 'tree') ? this.treeX : this.textX;
-        let ty = (state === 'tree') ? this.treeY : this.textY;
+    update(time) {
+        let targetList = (state === 'tree') ? targets.tree : targets.text;
+        // 循环使用目标点，确保所有粒子都有去处
+        let target = targetList[this.targetIndex % targetList.length];
 
-        // 飞过去
-        this.x += (tx - this.x) * config.transitionSpeed;
-        this.y += (ty - this.y) * config.transitionSpeed;
+        if (target) {
+            // 缓动飞向目标
+            this.x += (target.x - this.x) * config.transitionSpeed;
+            this.y += (target.y - this.y) * config.transitionSpeed;
+        }
 
-        // 原地呼吸波动
-        this.x += Math.sin(time * config.fluctuationSpeed + this.randomOffset) * 0.5;
-        this.y += Math.cos(time * config.fluctuationSpeed + this.randomOffset) * 0.5;
+        // 原地呼吸波动，永不静止
+        this.x += Math.sin(time * 0.004 + this.offset) * 0.3;
+        this.y += Math.cos(time * 0.004 + this.offset) * 0.3;
     }
 
     draw() {
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
         ctx.fillStyle = this.color;
-        // 添加一点发光效果
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = this.color;
+        // --- 关键：添加发光效果，模仿LED灯珠 ---
+        ctx.shadowBlur = 8; // 光晕半径
+        ctx.shadowColor = this.color; // 光晕颜色同粒子颜色
         ctx.fill();
         ctx.shadowBlur = 0; // 重置，避免影响性能
     }
 }
 
-// 简单的背景星星
-class BackgroundParticle {
-    constructor() { this.reset(); }
-    reset() {
-        this.x = Math.random() * width;
-        this.y = Math.random() * height;
-        this.size = Math.random() * 2;
-        this.speed = 0.2 + Math.random() * 0.5;
-        this.angle = Math.random() * Math.PI * 2;
+// --- 生成圣诞树目标点 ---
+function createTreePoints() {
+    const points = [];
+    const treeH = height * config.treeHeightRatio;
+    const treeW = width * config.treeWidthRatio;
+    const startY = height/2 + treeH/2; // 树底
+    const startX = width/2;
+
+    for (let i = 0; i < config.particleCount; i++) {
+        const hRatio = Math.random(); // 0(顶) -> 1(底)
+        const y = startY - hRatio * treeH;
+        const currentW = hRatio * treeW;
+        const x = startX + (Math.random() - 0.5) * currentW;
+        points.push({ x, y });
     }
-    update() {
-        this.x += Math.cos(this.angle) * this.speed;
-        this.y += Math.sin(this.angle) * this.speed;
-        if (this.x<0 || this.x>width || this.y<0 || this.y>height) this.reset();
-    }
-    draw() {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx.fill();
-    }
+    targets.tree = points;
 }
 
-// 获取文字的像素点坐标
-function getTextTargets() {
-    const offCanvas = document.createElement('canvas');
-    offCanvas.width = width;
-    offCanvas.height = height;
-    const offCtx = offCanvas.getContext('2d');
+// --- 关键：生成文字目标点 (使用一种更稳定的方法) ---
+function createTextPoints() {
+    // 使用一个巨大的虚拟画布来确保字能写下
+    const vSize = 1000; 
+    const vCanvas = document.createElement('canvas');
+    vCanvas.width = vSize;
+    vCanvas.height = vSize / 2;
+    const vCtx = vCanvas.getContext('2d');
 
-    // 动态调整字体大小
-    let fontSize = Math.min(width * 0.25, 120); 
-    offCtx.font = `bold ${fontSize}px sans-serif`;
-    offCtx.fillStyle = '#fff';
-    offCtx.textAlign = 'center';
-    offCtx.textBaseline = 'middle';
-    offCtx.fillText(config.text, width / 2, height / 2);
+    // 巨型粗体字
+    vCtx.font = 'bold 300px sans-serif'; 
+    vCtx.fillStyle = '#fff';
+    vCtx.textAlign = 'center';
+    vCtx.textBaseline = 'middle';
+    vCtx.fillText("圣诞快乐", vSize / 2, vSize / 4);
 
-    const imageData = offCtx.getImageData(0, 0, width, height).data;
-    const targets = [];
-    
-    // 扫描像素，存入 targets
-    for (let y = 0; y < height; y += 4) {
-        for (let x = 0; x < width; x += 4) {
-            if (imageData[(y * width + x) * 4 + 3] > 128) {
-                targets.push({x, y});
+    const imageData = vCtx.getImageData(0, 0, vSize, vSize/2).data;
+    const points = [];
+    // 密集扫描
+    const step = 4; 
+
+    for (let y = 0; y < vSize/2; y += step) {
+        for (let x = 0; x < vSize; x += step) {
+            // 只要有点不透明就认为是要的点
+            if (imageData[(y * vSize + x) * 4 + 3] > 50) {
+                // 计算缩放比例，把巨型字缩放到屏幕合适大小
+                const scale = Math.min(width, height) / vSize * 1.8;
+                points.push({
+                    x: width/2 + (x - vSize/2) * scale,
+                    y: height/2 + (y - vSize/4) * scale
+                });
             }
         }
     }
-    return targets;
-}
 
-function init() {
-    resize();
-    particles = [];
-    backgroundParticles = [];
-
-    // 1. 先扫描文字点
-    let textPoints = getTextTargets();
-
-    // 兜底：如果没扫到文字（例如屏幕太奇怪），生成一个圆圈作为目标
-    if (textPoints.length < 100) {
-        const radius = Math.min(width, height) * 0.3;
-        for(let i=0; i<PARTICLE_COUNT; i++){
-            const angle = (i / PARTICLE_COUNT) * Math.PI * 2;
-            textPoints.push({
-                x: width/2 + Math.cos(angle) * radius,
-                y: height/2 + Math.sin(angle) * radius
+    // 如果万一还是失败了（几乎不可能），至少显示一个方块阵列
+    if (points.length === 0) {
+        console.error("文字生成完全失败，使用方块兜底");
+        for(let i=0; i<config.particleCount; i++){
+            points.push({
+                x: width/2 + (Math.random()-0.5)*width*0.5,
+                y: height/2 + (Math.random()-0.5)*height*0.2
             });
         }
     }
-
-    // 2. 创建 800 个粒子（圣诞树形态）
-    // 并把文字目标分配给它们
-    for (let i = 0; i < PARTICLE_COUNT; i++) {
-        const p = new Particle(i);
-        
-        // 从 textPoints 里取一个目标给这个粒子
-        // 如果文字点比粒子少，就循环取；如果多，就随机取
-        const target = textPoints[i % textPoints.length];
-        p.textX = target.x;
-        p.textY = target.y;
-
-        particles.push(p);
-    }
-
-    // 3. 创建背景
-    for(let i=0; i<config.bgParticleCount; i++){
-        backgroundParticles.push(new BackgroundParticle());
-    }
-
-    animate();
+    targets.text = points;
 }
 
+// --- 动画循环 ---
 let startTime = null;
-let state = 'tree';
-
 function animate(timestamp) {
-    if (!startTime) startTime = timestamp || Date.now();
-    const progress = (timestamp || Date.now()) - startTime;
+    if (!startTime) startTime = timestamp;
+    const progress = timestamp - startTime;
 
-    ctx.clearRect(0, 0, width, height);
+    // 使用半透明黑色清空屏幕，制造一点点拖尾效果，更有光感
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(0, 0, width, height);
 
-    // 状态切换逻辑
-    if (state === 'tree' && progress > config.transitionDelay) {
+    // 3.5秒后开始变字
+    if (state === 'tree' && progress > 3500) {
         state = 'text';
     }
 
-    // 绘制所有层
-    backgroundParticles.forEach(p => { p.update(); p.draw(); });
-    particles.forEach(p => { p.update(timestamp || Date.now(), state); p.draw(); });
+    particles.forEach(p => {
+        p.update(timestamp);
+        p.draw();
+    });
 
     requestAnimationFrame(animate);
 }
 
-window.addEventListener('resize', () => {
+// --- 初始化 ---
+function init() {
     resize();
-    init(); // 窗口改变时重置
+    createTreePoints();
+    createTextPoints();
+    
+    particles = [];
+    // 创建足量的粒子
+    for (let i = 0; i < config.particleCount; i++) {
+        particles.push(new Particle(i));
+    }
+
     startTime = null;
     state = 'tree';
+    animate();
+}
+
+window.addEventListener('resize', () => {
+    init(); // 窗口变了就重来
 });
 
 init();
