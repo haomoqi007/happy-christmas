@@ -19,38 +19,29 @@ let isMobile = window.innerWidth < 768;
 
 // --- 核心配置 ---
 const config = {
+    // [关键修改1] 改为二维数组，支持多行
     texts: [
-        "00姐", 
-        "圣诞快乐", 
-        "幸福平安"
+        ["00姐"],           // 第一屏：保持单行
+        ["圣诞", "快乐"],    // 第二屏：分为两行
+        ["幸福", "平安"]     // 第三屏：分为两行
     ],
     duration: 10000, 
     
-    // 保持之前的高清参数
     particleCount: isMobile ? 3500 : 2500, 
     particleSize: isMobile ? 1.5 : 2.2,   
     
-    // [关键修改1] 定义两套色板
-    
-    // 1. 圣诞树配色 (保留原本的 Google 节日彩色)
+    // 1. 圣诞树配色 (彩色)
     treeColors: [
-        '#4285F4', // Blue
-        '#EA4335', // Red
-        '#34A853', // Green
-        '#FBBC05', // Yellow
-        '#FFFFFF'  // White
+        '#4285F4', '#EA4335', '#34A853', '#FBBC05', '#FFFFFF'
     ],
 
-    // 2. 文字配色 (蓝色主调，简约风)
-    // 这里的颜色配比决定了蓝色的占比，我多加了几个蓝色，少加了白色
+    // 2. 文字配色 (蓝色主调)
     textColors: [
-        '#4285F4', // Google Blue (标准蓝) - 占多份
-        '#4285F4', 
-        '#4285F4', 
-        '#1967D2', // Dark Blue (深蓝，增加层次)
-        '#8AB4F8', // Light Blue (浅蓝，增加透亮感)
-        '#00FFFF', // Cyan (青色，提亮)
-        '#FFFFFF'  // White (星星点缀，极少)
+        '#4285F4', '#4285F4', '#4285F4', // 标准蓝
+        '#1967D2', // 深蓝
+        '#8AB4F8', // 浅蓝
+        '#00FFFF', // 青色
+        '#FFFFFF'  // 白
     ],
 
     transitionSpeed: 0.04,
@@ -65,12 +56,10 @@ function resize() {
     config.particleSize = isMobile ? 1.5 : 2.2;
 }
 
-// [关键修改2] 修改获取颜色的函数，支持传入指定的色板
 function getRandomColor(colorArray) {
     return colorArray[Math.floor(Math.random() * colorArray.length)];
 }
 
-// [关键修改3] 新增：批量切换所有粒子的颜色
 function switchParticleColors(colorArray) {
     particles.forEach(p => {
         p.color = getRandomColor(colorArray);
@@ -88,10 +77,7 @@ class Particle {
         
         this.targetIndex = index;
         this.size = config.particleSize * (0.8 + Math.random() * 0.4);
-        
-        // 初始颜色：因为初始状态是树，所以用树的颜色
         this.color = getRandomColor(config.treeColors);
-        
         this.waveOffset = Math.random() * 100;
     }
 
@@ -136,7 +122,6 @@ class Particle {
         ctx.arc(this.screenX, this.screenY, this.screenSize, 0, Math.PI * 2);
         ctx.fillStyle = this.color;
         
-        // 保持之前的手机锐化逻辑
         if (isMobile) {
             ctx.shadowBlur = 2; 
         } else {
@@ -173,7 +158,8 @@ function createTreePoints() {
     }
 }
 
-function createPointsForString(textStr) {
+// [关键修改2] 支持传入数组（多行），并根据行数自动调整字号
+function createPointsForString(textItem) {
     const points = [];
     const vCanvas = document.createElement('canvas');
     const vSize = 1200; 
@@ -181,14 +167,32 @@ function createPointsForString(textStr) {
     vCanvas.height = vSize;
     const vCtx = vCanvas.getContext('2d');
 
-    const fontSize = isMobile ? 300 : 250; 
-    vCtx.font = `900 ${fontSize}px "Microsoft YaHei", "Heiti SC", sans-serif`;
+    // 1. 判断传入的是不是数组（多行）
+    // 如果是单行字符串，转成数组方便统一处理
+    const lines = Array.isArray(textItem) ? textItem : [textItem];
+
+    // 2. [关键] 动态计算字号
+    // 如果是 2 行字，字号可以非常大（400px）
+    // 如果是 1 行字（如00姐），稍微小一点点防止出界（300px）
+    let baseFontSize = isMobile ? 400 : 350;
+    if (lines.length > 1) baseFontSize = isMobile ? 380 : 320; 
+    
+    vCtx.font = `900 ${baseFontSize}px "Microsoft YaHei", "Heiti SC", sans-serif`;
     vCtx.fillStyle = '#fff';
     vCtx.textAlign = 'center';
     vCtx.textBaseline = 'middle';
 
-    vCtx.fillText(textStr, vSize / 2, vSize / 2);
+    // 3. 计算垂直布局
+    const lineHeight = baseFontSize * 1.1; // 行高
+    const totalHeight = lines.length * lineHeight;
+    const startY = (vSize - totalHeight) / 2 + lineHeight / 2;
 
+    // 4. 绘制每一行
+    lines.forEach((line, i) => {
+        vCtx.fillText(line, vSize / 2, startY + i * lineHeight);
+    });
+
+    // 5. 采样
     const imageData = vCtx.getImageData(0, 0, vSize, vSize).data;
     const step = 6; 
     const widthRatio = isMobile ? 0.95 : 0.6; 
@@ -218,6 +222,7 @@ function createPointsForString(textStr) {
 
 function initAllTargets() {
     createTreePoints();
+    // 传入配置好的文字数组
     targets.text1 = createPointsForString(config.texts[0]); 
     targets.text2 = createPointsForString(config.texts[1]); 
     targets.text3 = createPointsForString(config.texts[2]); 
@@ -231,18 +236,15 @@ function animate(timestamp) {
     
     const elapsed = timestamp - lastStateChangeTime;
     
-    // [关键修改4] 状态切换时的颜色控制
     if (elapsed > config.duration) {
         currentStateIndex = (currentStateIndex + 1) % states.length;
         lastStateChangeTime = timestamp;
         
         const nextState = states[currentStateIndex];
         
-        // 核心逻辑：如果是树，切回彩色；如果是字，切成蓝色系
         if (nextState === 'tree') {
             switchParticleColors(config.treeColors);
         } else {
-            // 所有文字状态 (text1, text2, text3) 都用蓝色系
             switchParticleColors(config.textColors);
         }
     }
@@ -262,9 +264,6 @@ function animate(timestamp) {
     requestAnimationFrame(animate);
 }
 
-// ==========================================
-// 启动
-// ==========================================
 function init() {
     resize();
     initAllTargets();
