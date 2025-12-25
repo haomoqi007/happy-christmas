@@ -3,19 +3,22 @@ const ctx = canvas.getContext('2d');
 
 let width, height;
 let particles = [];
-// 存储两种形态的目标坐标点
+// 存储两种形态的目标坐标点 (带3D信息)
 let targets = { tree: [], text: [] }; 
 let state = 'tree'; // 当前状态
+let rotationAngle = 0; // 全局旋转角度
 
 // --- 配置项 ---
 const config = {
-    text: "圣诞快乐", 
-    particleCount: 1500, // 粒子总数，越多越清晰，但性能要求越高
-    particleSize: 2.5, // 粒子大小
-    // 模仿 Gemini 的蓝紫色调
-    colors: ['#4285f4', '#9b72cb', '#d96570', '#131314', '#ffffff'],
-    transitionSpeed: 0.05, // 变换速度 (越小越慢越平滑)
-    delayBeforeMorph: 3000 // 开始变形前的等待时间 (毫秒)
+    text: "Merry Christmas", 
+    particleCount: 2000, // 粒子总数
+    particleSize: 2.2, // 粒子大小
+    // 圣诞幻彩灯光色板
+    colors: ['#ff3333', '#00cc66', '#ffcc00', '#3399ff', '#ffffff'],
+    transitionSpeed: 0.03, // 变换速度
+    delayBeforeMorph: 4000, // 开始变形前的等待时间
+    rotationSpeed: 0.003, // 3D旋转速度
+    noiseStrength: 5 // 流体噪声强度
 };
 
 // --- 初始化画布尺寸 ---
@@ -29,60 +32,98 @@ function getRandomColor() {
     return config.colors[Math.floor(Math.random() * config.colors.length)];
 }
 
+// --- 简化的噪声函数 (模拟Perlin Noise) ---
+function noise(x, y, z) {
+    const p = [151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208, 89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255, Z = Math.floor(z) & 255;
+    x -= Math.floor(x); y -= Math.floor(y); z -= Math.floor(z);
+    const u = fade(x), v = fade(y), w = fade(z);
+    const A = p[X]+Y, AA = p[A]+Z, AB = p[A+1]+Z, B = p[X+1]+Y, BA = p[B]+Z, BB = p[B+1]+Z;
+    return lerp(w, lerp(v, lerp(u, grad(p[AA], x, y, z), grad(p[BA], x-1, y, z)), lerp(u, grad(p[AB], x, y-1, z), grad(p[BB], x-1, y-1, z))), lerp(v, lerp(u, grad(p[AA+1], x, y, z-1), grad(p[BA+1], x-1, y, z-1)), lerp(u, grad(p[AB+1], x, y-1, z-1), grad(p[BB+1], x-1, y-1, z-1))));
+}
+function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+function lerp(t, a, b) { return a + t * (b - a); }
+function grad(hash, x, y, z) { const h = hash & 15; const u = h<8 ? x : y, v = h<4 ? y : h==12||h==14 ? x : z; return ((h&1) == 0 ? u : -u) + ((h&2) == 0 ? v : -v); }
+
 // ==========================================
-// 核心类：粒子
+// 核心类：粒子 (升级版)
 // ==========================================
 class Particle {
-    constructor() {
-        // 初始位置随机分布在屏幕外，制造入场效果
+    constructor(index) {
         this.x = Math.random() * width;
         this.y = Math.random() * height;
-        this.size = config.particleSize + Math.random() * 1.5;
-        this.color = getRandomColor();
-        this.targetIndex = 0; // 对应目标点列表中的索引
-        
-        // 每个粒子的随机波动参数，让运动不那么死板
-        this.noiseOffsetX = Math.random() * 100;
-        this.noiseOffsetY = Math.random() * 100;
+        this.z = (Math.random() - 0.5) * 200; // 引入Z轴深度
+        this.size = config.particleSize * (0.5 + Math.random());
+        this.color = getRandomColor(); // 随机幻彩颜色
+        this.targetIndex = index;
+        // 噪声参数
+        this.noiseOffsetX = Math.random() * 1000;
+        this.noiseOffsetY = Math.random() * 1000;
+        this.noiseOffsetZ = Math.random() * 1000;
     }
 
-    // 更新粒子位置
+    // 更新粒子位置 (核心3D旋转和流体运动逻辑)
     update(time) {
-        // 1. 确定当前的目标点列表
         let targetList = (state === 'tree') ? targets.tree : targets.text;
-        
-        // 2. 找到自己的目标坐标
-        // 如果目标点数量少于粒子数，循环使用目标点
         let target = targetList[this.targetIndex % targetList.length];
+        if (!target) target = { x: 0, y: 0, z: 0 };
 
-        // 兜底：如果没有目标点，就待在屏幕中心
-        if (!target) target = { x: width / 2, y: height / 2 };
+        // 1. 3D旋转变换 (绕Y轴旋转)
+        // 将目标点从 2D 映射到 3D 空间，并应用旋转
+        const cos = Math.cos(rotationAngle);
+        const sin = Math.sin(rotationAngle);
+        // 目标点的原始3D坐标 (相对于中心点)
+        const tx0 = target.x;
+        const ty0 = target.y;
+        const tz0 = target.z || 0;
+        // 旋转后的3D坐标
+        const tx1 = tx0 * cos - tz0 * sin;
+        const ty1 = ty0;
+        const tz1 = tx0 * sin + tz0 * cos;
 
-        // 3. 缓动计算 (Easing) - 核心动画原理
-        // 每一帧都向目标点移动剩下距离的一小部分
-        this.x += (target.x - this.x) * config.transitionSpeed;
-        this.y += (target.y - this.y) * config.transitionSpeed;
+        // 2. 计算透视投影 (将3D坐标投影回2D屏幕)
+        const perspective = 1000; // 透视距离
+        const scale = perspective / (perspective - tz1); // 近大远小
+        const finalTargetX = width / 2 + tx1 * scale;
+        const finalTargetY = height / 2 + ty1 * scale;
+
+        // 3. 缓动飞向目标 (Easing)
+        this.x += (finalTargetX - this.x) * config.transitionSpeed;
+        this.y += (finalTargetY - this.y) * config.transitionSpeed;
+        this.z += (tz1 - this.z) * config.transitionSpeed;
+        
+        // 4. 叠加流体噪声运动 (永不静止的核心)
+        const nX = noise(time * 0.0005 + this.noiseOffsetX, time * 0.0005, this.noiseOffsetZ) * config.noiseStrength;
+        const nY = noise(time * 0.0005 + this.noiseOffsetY, time * 0.0005 + 100, this.noiseOffsetZ) * config.noiseStrength;
+        
+        this.x += nX;
+        this.y += nY;
+        // 根据深度调整大小，增强3D感
+        this.currentSize = this.size * scale;
     }
 
-    // 绘制粒子
     draw() {
+        // 不绘制太远或太近的粒子
+        if (this.currentSize <= 0) return;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.arc(this.x, this.y, this.currentSize, 0, Math.PI * 2);
         ctx.fillStyle = this.color;
+        // 添加一点发光效果，增强灯珠感
+        ctx.shadowBlur = this.currentSize * 2;
+        ctx.shadowColor = this.color;
         ctx.fill();
+        ctx.shadowBlur = 0;
     }
 }
 
 // ==========================================
-// 核心功能：形状采样器
-// 在虚拟画布上画出形状，然后读取像素坐标
+// 形状采样器
 // ==========================================
 const Sampler = {
-    // 创建一个虚拟的小画布用于采样
     vCanvas: document.createElement('canvas'),
     vCtx: null,
-    vWidth: 200, // 虚拟宽度，越小采样越快，但精度越低
-    vHeight: 200,
+    vWidth: 400, // 提高采样分辨率
+    vHeight: 400,
 
     init: function() {
         this.vCanvas.width = this.vWidth;
@@ -90,49 +131,55 @@ const Sampler = {
         this.vCtx = this.vCanvas.getContext('2d', { willReadFrequently: true });
     },
 
-    // 通用采样方法
     getPoints: function(drawFn) {
         this.vCtx.clearRect(0, 0, this.vWidth, this.vHeight);
         drawFn(this.vCtx, this.vWidth, this.vHeight);
         
         const imageData = this.vCtx.getImageData(0, 0, this.vWidth, this.vHeight).data;
         const points = [];
-        const step = 2; // 采样步长，越小点越密
+        const step = 3; // 采样密度
 
         for (let y = 0; y < this.vHeight; y += step) {
             for (let x = 0; x < this.vWidth; x += step) {
-                const alpha = imageData[(y * this.vWidth + x) * 4 + 3];
-                // 如果像素不透明，认为是一个点
-                if (alpha > 128) {
-                    // 将虚拟坐标映射回真实屏幕坐标，并居中放大
-                    const scale = Math.min(width, height) / this.vWidth * 0.8;
-                    const realX = width / 2 + (x - this.vWidth / 2) * scale;
-                    const realY = height / 2 + (y - this.vHeight / 2) * scale;
-                    points.push({ x: realX, y: realY });
+                if (imageData[(y * this.vWidth + x) * 4 + 3] > 128) {
+                    // 坐标归一化到 -1 到 1 之间，方便后续3D处理
+                    const nx = (x / this.vWidth) * 2 - 1;
+                    const ny = (y / this.vHeight) * 2 - 1;
+                    // 映射到虚拟3D空间范围
+                    const range = Math.min(width, height) * 0.7;
+                    points.push({ x: nx * range, y: ny * range, z: 0 });
                 }
             }
         }
-        // 打乱顺序，让变形时的飞行轨迹更随机好看
         return points.sort(() => Math.random() - 0.5);
     },
 
-    // 定义如何画树 (参考图1的形状)
+    // 画树 (更精细的形状)
     drawTree: function(ctx, w, h) {
         ctx.fillStyle = '#fff';
         ctx.beginPath();
-        // 简单的三角形树冠
-        ctx.moveTo(w / 2, h * 0.1); 
-        ctx.lineTo(w * 0.8, h * 0.7);
-        ctx.lineTo(w * 0.2, h * 0.7);
-        ctx.fill();
+        const topY = h * 0.1;
+        const bottomY = h * 0.8;
+        const centerX = w / 2;
+        // 三层树冠
+        for (let i = 0; i < 3; i++) {
+            const layerTop = topY + (bottomY - topY) * (i * 0.25);
+            const layerBottom = topY + (bottomY - topY) * ((i + 1) * 0.3);
+            const layerWidth = w * (0.2 + i * 0.15);
+            ctx.moveTo(centerX, layerTop);
+            ctx.lineTo(centerX + layerWidth, layerBottom);
+            ctx.lineTo(centerX - layerWidth, layerBottom);
+            ctx.fill();
+        }
         // 树干
-        ctx.fillRect(w * 0.45, h * 0.7, w * 0.1, h * 0.2);
+        ctx.fillRect(centerX - w*0.05, bottomY, w*0.1, h*0.15);
     },
 
-    // 定义如何画文字 (参考图2的内容)
+    // 画文字 (参考图6的风格)
     drawText: function(ctx, w, h) {
         ctx.fillStyle = '#fff';
-        ctx.font = 'bold 50px "Microsoft YaHei", sans-serif';
+        // 使用更活泼的字体，如果系统没有会回退到通用字体
+        ctx.font = 'bold italic 60px "Comic Sans MS", "Arial Rounded MT Bold", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(config.text, w / 2, h / 2);
@@ -148,50 +195,47 @@ function animate(timestamp) {
     if (!startTime) startTime = timestamp;
     const progress = timestamp - startTime;
 
-    // 使用半透明清空画布，制造一点点拖尾光影效果
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.fillRect(0, 0, width, height);
+    // 增加全局旋转角度，产生整体的3D自转
+    rotationAngle += config.rotationSpeed;
 
-    // 时间到后切换状态
+    // 使用半透明清空画布，制造丝滑的拖尾光影
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.fillRect(0, 0, width, height);
+    // ctx.globalCompositeOperation = 'lighter'; // 可选：叠加变亮模式，光感更强
+
     if (state === 'tree' && progress > config.delayBeforeMorph) {
         state = 'text';
     }
 
-    // 更新并绘制所有粒子
     particles.forEach(p => {
         p.update(timestamp);
         p.draw();
     });
 
+    // ctx.globalCompositeOperation = 'source-over'; // 恢复默认混合模式
     requestAnimationFrame(animate);
 }
 
 function init() {
     resize();
     Sampler.init();
-
-    // 1. 生成两种形态的目标点
     targets.tree = Sampler.getPoints(Sampler.drawTree);
     targets.text = Sampler.getPoints(Sampler.drawText);
     
-    // 2. 创建粒子
     particles = [];
     for (let i = 0; i < config.particleCount; i++) {
-        const p = new Particle();
-        p.targetIndex = i;
-        particles.push(p);
+        particles.push(new Particle(i));
     }
 
-    // 3. 开始动画
     startTime = null;
     state = 'tree';
+    rotationAngle = 0;
     animate();
 }
 
-// 窗口大小改变时重新计算
 window.addEventListener('resize', () => {
-    // 简单处理：刷新页面以适应新尺寸
-    location.reload();
+    // 窗口尺寸改变时彻底重置
+    init();
 });
 
 // 启动
