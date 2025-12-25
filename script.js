@@ -4,16 +4,15 @@ const ctx = canvas.getContext('2d');
 let width, height;
 let particles = [];
 let targets = { tree: [], text: [] };
-// [修改点 1] 初始状态直接设为文字
-let state = 'text'; 
+let state = 'tree';
 let rotationAngle = 0;
 
 // --- 配置 ---
 const config = {
-    // 文字内容数组
-    text: ["00姐", "Merry Christmas"],
-    particleCount: 1500,
-    particleSize: 2.5,
+    // [修改点] 这里改成了你想要的内容
+    text: ["00姐", "圣诞快乐"], 
+    particleCount: 1500, // 粒子数量
+    particleSize: 2.5,   // 粒子大小
     colors: ['#4285F4', '#EA4335', '#34A853', '#FBBC05', '#FFFFFF', '#00FFFF'],
     transitionSpeed: 0.05,
     rotationSpeed: 0.005,
@@ -46,6 +45,7 @@ class Particle {
 
     update(time) {
         let targetList = (state === 'tree') ? targets.tree : targets.text;
+        // 循环分配目标点
         let t = targetList[this.targetIndex % targetList.length] || {x: 0, y: 0, z: 0};
 
         const tx = t.x;
@@ -54,6 +54,7 @@ class Particle {
 
         let rx, ry, rz;
 
+        // 状态判断：树旋转，文字不转
         if (state === 'tree') {
             const cos = Math.cos(rotationAngle);
             const sin = Math.sin(rotationAngle);
@@ -61,20 +62,21 @@ class Particle {
             ry = ty;
             rz = tx * sin + tz * cos;
         } else {
-            // 状态是文字：不旋转，直接面向观众 (扁平)
             rx = tx;
             ry = ty;
             rz = tz;
         }
 
+        // 粒子飞行
         this.x += (rx - this.x) * config.transitionSpeed;
         this.y += (ry - this.y) * config.transitionSpeed;
         this.z += (rz - this.z) * config.transitionSpeed;
 
-        // 添加波浪流动效果 (保持流动感)
+        // 波动效果
         const waveX = Math.sin(time * 0.002 + this.waveOffset) * 5;
         const waveY = Math.cos(time * 0.002 + this.waveOffset) * 5;
         
+        // 3D 投影
         const scale = config.depth / (config.depth + this.z);
         this.screenX = width / 2 + (this.x + waveX) * scale;
         this.screenY = height / 2 + (this.y + waveY) * scale;
@@ -95,12 +97,13 @@ class Particle {
 // ==========================================
 // 目标生成器
 // ==========================================
-// 这个函数其实可以删掉了，保留着也不影响
 function createTreePoints() {
     targets.tree = [];
     const count = config.particleCount;
     const heightRange = height * 0.7;
     const maxRadius = width * 0.3;
+
+    // 树的位置向上偏移 5%
     const yOffset = -height * 0.05; 
 
     for (let i = 0; i < count; i++) {
@@ -120,18 +123,20 @@ function createTreePoints() {
 function createTextPoints() {
     targets.text = [];
     const vCanvas = document.createElement('canvas');
-    const vSize = 1000;
+    const vSize = 1000; // 大画布保证清晰度
     vCanvas.width = vSize;
     vCanvas.height = vSize;
     const vCtx = vCanvas.getContext('2d');
 
+    // 字体设置
     vCtx.font = 'bold 120px "Microsoft YaHei", Arial, sans-serif';
     vCtx.fillStyle = '#fff';
     vCtx.textAlign = 'center';
     vCtx.textBaseline = 'middle';
 
+    // 绘制多行文字
     const lines = config.text;
-    const lineHeight = 150; 
+    const lineHeight = 160; // 行高
     const totalHeight = lines.length * lineHeight;
     const startY = (vSize - totalHeight) / 2 + lineHeight / 2;
 
@@ -142,6 +147,7 @@ function createTextPoints() {
     const imageData = vCtx.getImageData(0, 0, vSize, vSize).data;
     const step = 4;
 
+    // 缩放比例：让文字区域占屏幕宽度的 90%
     const targetWidth = width * 0.9;
     const scale = targetWidth / vSize;
 
@@ -158,6 +164,7 @@ function createTextPoints() {
         }
     }
 
+    // 兜底：如果没生成文字点，生成圆球
     if (targets.text.length === 0) {
         for (let i = 0; i < config.particleCount; i++) {
             const theta = Math.random() * Math.PI * 2;
@@ -178,9 +185,9 @@ let startTime = null;
 
 function animate(timestamp) {
     if (!startTime) startTime = timestamp;
-    // const progress = timestamp - startTime; // 不需要计算进度了
+    const progress = timestamp - startTime;
 
-    // 只有在树的状态下，才增加旋转角度 (现在永远不会执行)
+    // 只有在树的状态下旋转
     if (state === 'tree') {
         rotationAngle += config.rotationSpeed;
     }
@@ -188,12 +195,10 @@ function animate(timestamp) {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
     ctx.fillRect(0, 0, width, height);
 
-    // [修改点 2] 注释掉或删除状态切换逻辑，确保一直保持在 text 状态
-    /*
+    // 4秒后切换为文字
     if (state === 'tree' && progress > 4000) {
         state = 'text';
     }
-    */
 
     particles.forEach(p => {
         p.update(timestamp);
@@ -210,13 +215,14 @@ function init() {
     resize();
     createTreePoints();
     createTextPoints();
+    
     particles = [];
     for (let i = 0; i < config.particleCount; i++) {
         particles.push(new Particle(i));
     }
+    
     startTime = null;
-    // [修改点 3] 确保初始化时状态就是 text
-    state = 'text'; 
+    state = 'tree';
     rotationAngle = 0;
     animate();
 }
@@ -224,7 +230,7 @@ function init() {
 window.addEventListener('resize', () => {
     resize();
     createTreePoints();
-    createTextPoints(); 
+    createTextPoints();
 });
 
 init();
