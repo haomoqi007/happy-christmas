@@ -19,29 +19,31 @@ let isMobile = window.innerWidth < 768;
 
 // --- 核心配置 ---
 const config = {
-    // [关键修改1] 改为二维数组，支持多行
     texts: [
-        ["00姐"],           // 第一屏：保持单行
-        ["圣诞", "快乐"],    // 第二屏：分为两行
-        ["幸福", "平安"]     // 第三屏：分为两行
+        ["00姐"],           
+        ["圣诞", "快乐"],    
+        ["幸福", "平安"]     
     ],
     duration: 10000, 
     
+    // 保持高密度粒子
     particleCount: isMobile ? 3500 : 2500, 
     particleSize: isMobile ? 1.5 : 2.2,   
     
-    // 1. 圣诞树配色 (彩色)
+    // 1. 圣诞树配色 (保持原本的丰富多彩)
     treeColors: [
         '#4285F4', '#EA4335', '#34A853', '#FBBC05', '#FFFFFF'
     ],
 
-    // 2. 文字配色 (蓝色主调)
+    // [关键修改1] 文字配色：蓝色主调 + 红黄点缀
+    // 数组里的颜色越多，出现的概率越高。
+    // 这里放了 6 个蓝色，1 个红色，1 个黄色，1 个白色。
+    // 这样蓝色占比约 65%，红黄各占 10% 左右，作为点缀。
     textColors: [
-        '#4285F4', '#4285F4', '#4285F4', // 标准蓝
-        '#1967D2', // 深蓝
-        '#8AB4F8', // 浅蓝
-        '#00FFFF', // 青色
-        '#FFFFFF'  // 白
+        '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', // 主调蓝
+        '#EA4335', // 点缀红
+        '#FBBC05', // 点缀黄
+        '#FFFFFF'  // 点缀白
     ],
 
     transitionSpeed: 0.04,
@@ -158,43 +160,41 @@ function createTreePoints() {
     }
 }
 
-// [关键修改2] 支持传入数组（多行），并根据行数自动调整字号
 function createPointsForString(textItem) {
     const points = [];
-    const vCanvas = document.createElement('canvas');
-    const vSize = 1200; 
+    // [关键] 进一步加大虚拟画布，防止大字被裁切
+    const vSize = 1500; 
+    vCanvas = document.createElement('canvas'); // 确保新建
     vCanvas.width = vSize;
     vCanvas.height = vSize;
     const vCtx = vCanvas.getContext('2d');
 
-    // 1. 判断传入的是不是数组（多行）
-    // 如果是单行字符串，转成数组方便统一处理
     const lines = Array.isArray(textItem) ? textItem : [textItem];
 
-    // 2. [关键] 动态计算字号
-    // 如果是 2 行字，字号可以非常大（400px）
-    // 如果是 1 行字（如00姐），稍微小一点点防止出界（300px）
-    let baseFontSize = isMobile ? 400 : 350;
-    if (lines.length > 1) baseFontSize = isMobile ? 380 : 320; 
+    // [关键修改2] 字体再加大
+    // 手机上：如果是两行字，字号设为 500 (极大)
+    // 电脑上：设为 450
+    let baseFontSize = isMobile ? 500 : 450;
     
+    // 如果是单行（00姐），稍微克制一点，不然会撑破
+    if (lines.length === 1) baseFontSize = isMobile ? 400 : 350;
+
     vCtx.font = `900 ${baseFontSize}px "Microsoft YaHei", "Heiti SC", sans-serif`;
     vCtx.fillStyle = '#fff';
     vCtx.textAlign = 'center';
     vCtx.textBaseline = 'middle';
 
-    // 3. 计算垂直布局
-    const lineHeight = baseFontSize * 1.1; // 行高
+    const lineHeight = baseFontSize * 1.0; // 紧凑行高
     const totalHeight = lines.length * lineHeight;
     const startY = (vSize - totalHeight) / 2 + lineHeight / 2;
 
-    // 4. 绘制每一行
     lines.forEach((line, i) => {
         vCtx.fillText(line, vSize / 2, startY + i * lineHeight);
     });
 
-    // 5. 采样
     const imageData = vCtx.getImageData(0, 0, vSize, vSize).data;
     const step = 6; 
+    // [关键] 撑满屏幕宽度 95%
     const widthRatio = isMobile ? 0.95 : 0.6; 
     const targetWidth = width * widthRatio;
     const scale = targetWidth / vSize;
@@ -222,7 +222,6 @@ function createPointsForString(textItem) {
 
 function initAllTargets() {
     createTreePoints();
-    // 传入配置好的文字数组
     targets.text1 = createPointsForString(config.texts[0]); 
     targets.text2 = createPointsForString(config.texts[1]); 
     targets.text3 = createPointsForString(config.texts[2]); 
@@ -245,6 +244,7 @@ function animate(timestamp) {
         if (nextState === 'tree') {
             switchParticleColors(config.treeColors);
         } else {
+            // 切换为 文字色板 (蓝主调 + 红黄点缀)
             switchParticleColors(config.textColors);
         }
     }
