@@ -29,12 +29,12 @@ const config = {
     particleCount: isMobile ? 3500 : 2500, 
     particleSize: isMobile ? 1.5 : 2.2,   
     
-    // 1. 圣诞树配色 (Google 经典五色)
+    // 1. 圣诞树配色
     treeColors: [
         '#4285F4', '#EA4335', '#34A853', '#FBBC05', '#FFFFFF'
     ],
 
-    // 2. 文字配色 (蓝调为主 + 红黄点缀)
+    // 2. 文字配色
     textColors: [
         '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4',
         '#EA4335', 
@@ -135,46 +135,48 @@ class Particle {
 // 目标生成器
 // ==========================================
 
-// [⭐核心修改⭐] 全新的真实树形生成算法
+// [⭐核心算法重构⭐] 解决顶部密集和缺乏层次感的问题
 function createTreePoints() {
     targets.tree = [];
     const count = config.particleCount;
-    const treeHeight = height * 0.75;
-    // 稍微加宽底部，让树看起来更稳重
+    const treeHeight = height * 0.8; // 树高一点
+    // 底部最大半径
     const maxBaseRadius = Math.min(width * 0.45, height * 0.35); 
+    // 整体向上偏移量
     const yOffset = -height * 0.05; 
 
     for (let i = 0; i < count; i++) {
-        // 1. 高度 h (从 0 底部 到 1 顶部)
-        // 使用 pow 让底部的粒子稍微密集一点，重心更稳
-        const h = Math.pow(Math.random(), 0.8);
-        // 映射到屏幕 Y 坐标
-        const y = (h - 0.5) * treeHeight + yOffset;
+        // 1. [解决顶部密集] 高度分布优化
+        // 使用 Math.pow(..., 1.3) 让 h 的值更倾向于 0 (底部)。
+        // 这样顶部的高度区间分配到的粒子数就会显著减少。
+        let hRatio = Math.pow(Math.random(), 1.3); 
+        // hRatio: 0(底) -> 1(顶)
 
-        // 2. 基础圆锥半径 (越往上越窄)
-        const baseRadius = maxBaseRadius * (1 - h);
+        // 2. [解决层次感] 强力分层算法
+        const layers = 9; // 设置 9 层树枝
+        // 使用强烈的正弦波绝对值来制造明显的凹凸。
+        // (1 - hRatio) 确保顶部的分层幅度比底部小。
+        const layerBulge = (1 - hRatio) * Math.abs(Math.sin(hRatio * Math.PI * layers));
 
-        // 3. [关键] 分层效果 (Layering Effect)
-        // 模仿真实树木一层层的树枝。设置约 7 层。
-        // 使用 sin 函数创造波浪起伏，abs 让波浪向外凸起。
-        // (1-h)*0.3 意味着越往树顶，分层效果越不明显。
-        const layers = 7;
-        const layerBulge = (1 - h) * 0.3 * Math.abs(Math.sin(h * Math.PI * layers));
+        // 3. 基础圆锥形态
+        const baseCone = (1 - hRatio);
 
-        // 4. [关键] 自然噪点 (Natural Noise)
-        // 让树枝边缘不那么圆滑，增加参差感
+        // 4. 合并半径计算
+        // 基础圆锥占 30%，分层凸起占 70%，极大增强层次感视觉。
+        let finalRadius = maxBaseRadius * (baseCone * 0.3 + layerBulge * 0.7);
+
+        // 5. [优化体积感]
+        // 不再深入内部填充，而是让粒子集中在计算出的半径表面附近 (0.85 ~ 1.0 之间)
+        // 这样能让分层的轮廓更加清晰锐利。
+        finalRadius *= (0.85 + 0.15 * Math.random());
+
+        // 计算 Y 坐标 (注意屏幕坐标系 Y 向下为正)
+        const y = -treeHeight/2 + hRatio * treeHeight + yOffset;
         const angle = Math.random() * Math.PI * 2;
-        const branchNoise = 0.05 * Math.sin(angle * 5 + h * 10);
 
-        // 5. [关键] 最终半径计算 (Volumetric Radius)
-        // 结合基础半径、分层凸起和噪点。
-        // Math.sqrt(Math.random()) 用于让粒子均匀填充在圆内，而不是聚集在中心，制造体积感。
-        const finalRadius = baseRadius * (1 + layerBulge + branchNoise) * Math.sqrt(Math.random());
-
-        // 生成 3D 坐标 (注意 Y 轴方向)
         targets.tree.push({
             x: Math.cos(angle) * finalRadius,
-            y: -y, // 取反，因为屏幕坐标 Y 向下为正
+            y: y, 
             z: Math.sin(angle) * finalRadius
         });
     }
