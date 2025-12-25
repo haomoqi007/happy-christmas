@@ -29,12 +29,12 @@ const config = {
     particleCount: isMobile ? 3500 : 2500, 
     particleSize: isMobile ? 1.5 : 2.2,   
     
-    // 1. 圣诞树配色
+    // 1. 圣诞树配色 (Google 经典五色)
     treeColors: [
         '#4285F4', '#EA4335', '#34A853', '#FBBC05', '#FFFFFF'
     ],
 
-    // 2. 文字配色
+    // 2. 文字配色 (蓝调为主 + 红黄点缀)
     textColors: [
         '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4',
         '#EA4335', 
@@ -135,44 +135,44 @@ class Particle {
 // 目标生成器
 // ==========================================
 
-// [⭐核心算法重构⭐] 解决顶部密集和缺乏层次感的问题
+// [⭐ 核心修复：树形生成算法]
 function createTreePoints() {
     targets.tree = [];
     const count = config.particleCount;
-    const treeHeight = height * 0.8; // 树高一点
-    // 底部最大半径
-    const maxBaseRadius = Math.min(width * 0.45, height * 0.35); 
-    // 整体向上偏移量
-    const yOffset = -height * 0.05; 
+    // 树的高度：占屏幕高度的 85%
+    const treeHeight = height * 0.85; 
+    // 底部最宽处的半径
+    const maxBaseRadius = Math.min(width * 0.4, height * 0.35); 
+    // 整体向上移动一点，保持居中
+    const yOffset = -height * 0.1; 
 
     for (let i = 0; i < count; i++) {
-        // 1. [解决顶部密集] 高度分布优化
-        // 使用 Math.pow(..., 1.3) 让 h 的值更倾向于 0 (底部)。
-        // 这样顶部的高度区间分配到的粒子数就会显著减少。
-        let hRatio = Math.pow(Math.random(), 1.3); 
-        // hRatio: 0(底) -> 1(顶)
+        // [关键] 高度分布算法
+        // 使用 sqrt(random) 让 h 分布偏向 1 (底部)。
+        // 这样底部的宽阔区域会有更多粒子，顶部的狭窄区域粒子较少，
+        // 完美解决“顶部太密、底部太疏”的问题。
+        const h = Math.sqrt(Math.random()); 
+        // h: 0 (树顶) -> 1 (树底)
 
-        // 2. [解决层次感] 强力分层算法
-        const layers = 9; // 设置 9 层树枝
-        // 使用强烈的正弦波绝对值来制造明显的凹凸。
-        // (1 - hRatio) 确保顶部的分层幅度比底部小。
-        const layerBulge = (1 - hRatio) * Math.abs(Math.sin(hRatio * Math.PI * layers));
+        // 计算 Y 坐标：从 负(顶) 到 正(底)
+        const y = (h - 0.5) * treeHeight + yOffset;
 
-        // 3. 基础圆锥形态
-        const baseCone = (1 - hRatio);
+        // 计算基础半径：线性增长 (圆锥体)
+        // h=0 -> r=0; h=1 -> r=Max
+        let r = maxBaseRadius * h;
 
-        // 4. 合并半径计算
-        // 基础圆锥占 30%，分层凸起占 70%，极大增强层次感视觉。
-        let finalRadius = maxBaseRadius * (baseCone * 0.3 + layerBulge * 0.7);
+        // [关键] 分层纹理 (Layers)
+        // 增加 8 层波浪，模仿树枝伸出的感觉
+        const layers = 8;
+        // 使用 sin 波让半径忽大忽小
+        const layerEffect = 1 + 0.15 * Math.sin(h * layers * Math.PI * 2 + i * 0.1);
 
-        // 5. [优化体积感]
-        // 不再深入内部填充，而是让粒子集中在计算出的半径表面附近 (0.85 ~ 1.0 之间)
-        // 这样能让分层的轮廓更加清晰锐利。
-        finalRadius *= (0.85 + 0.15 * Math.random());
+        // [关键] 螺旋分布 (Spiral)
+        // 参考你发的图，粒子并不是杂乱的，而是有螺旋纹理
+        const angle = i * 0.1 + h * 10; 
 
-        // 计算 Y 坐标 (注意屏幕坐标系 Y 向下为正)
-        const y = -treeHeight/2 + hRatio * treeHeight + yOffset;
-        const angle = Math.random() * Math.PI * 2;
+        // 最终半径：基础半径 * 分层效果 * 随机厚度(让树看起来厚实)
+        const finalRadius = r * layerEffect * (0.8 + 0.2 * Math.random());
 
         targets.tree.push({
             x: Math.cos(angle) * finalRadius,
@@ -180,7 +180,7 @@ function createTreePoints() {
             z: Math.sin(angle) * finalRadius
         });
     }
-    // 打乱顺序，让变换更自然
+    // 随机打乱
     targets.tree.sort(() => Math.random() - 0.5);
 }
 
@@ -214,97 +214,4 @@ function createPointsForString(textItem) {
     const step = isMobile ? 5 : 6; 
 
     const availWidth = width * (isMobile ? 0.9 : 0.7);
-    const availHeight = height * (isMobile ? 0.8 : 0.7);
-    const scaleX = availWidth / vSize;
-    const scaleY = availHeight / vSize;
-    const scale = Math.min(scaleX, scaleY);
-
-    for (let y = 0; y < vSize; y += step) {
-        for (let x = 0; x < vSize; x += step) {
-            const alpha = imageData[(y * vSize + x) * 4 + 3];
-            if (alpha > 200) {
-                points.push({
-                    x: (x - vSize/2) * scale,
-                    y: (y - vSize/2) * scale,
-                    z: 0
-                });
-            }
-        }
-    }
-    
-    points.sort(() => Math.random() - 0.5);
-
-    if (points.length === 0) {
-        for (let i = 0; i < 100; i++) points.push({x:0, y:0, z:0});
-    }
-    return points;
-}
-
-function initAllTargets() {
-    createTreePoints();
-    targets.text1 = createPointsForString(config.texts[0]); 
-    targets.text2 = createPointsForString(config.texts[1]); 
-    targets.text3 = createPointsForString(config.texts[2]); 
-}
-
-// ==========================================
-// 动画循环
-// ==========================================
-function animate(timestamp) {
-    if (!lastStateChangeTime) lastStateChangeTime = timestamp;
-    
-    const elapsed = timestamp - lastStateChangeTime;
-    
-    if (elapsed > config.duration) {
-        currentStateIndex = (currentStateIndex + 1) % states.length;
-        lastStateChangeTime = timestamp;
-        
-        const nextState = states[currentStateIndex];
-        
-        if (nextState === 'tree') {
-            switchParticleColors(config.treeColors);
-        } else {
-            switchParticleColors(config.textColors);
-        }
-    }
-
-    if (states[currentStateIndex] === 'tree') {
-        rotationAngle += config.rotationSpeed;
-    }
-
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)'; 
-    ctx.fillRect(0, 0, width, height);
-
-    particles.forEach(p => {
-        p.update(timestamp);
-        p.draw();
-    });
-
-    requestAnimationFrame(animate);
-}
-
-function init() {
-    resize();
-    initAllTargets();
-    
-    particles = [];
-    for (let i = 0; i < config.particleCount; i++) {
-        particles.push(new Particle(i));
-    }
-    
-    currentStateIndex = 0;
-    lastStateChangeTime = 0;
-    rotationAngle = 0;
-    animate();
-}
-
-window.addEventListener('resize', () => {
-    resize();
-    initAllTargets();
-    particles = [];
-    for (let i = 0; i < config.particleCount; i++) {
-        particles.push(new Particle(i));
-    }
-});
-
-init();
+    const availHeight
