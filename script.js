@@ -3,19 +3,34 @@ const ctx = canvas.getContext('2d');
 
 let width, height;
 let particles = [];
-let targets = { tree: [], text: [] };
-let state = 'tree';
+// 存储所有状态的目标点
+let targets = { 
+    tree: [], 
+    text1: [], // 00姐
+    text2: [], // 圣诞快乐
+    text3: []  // 幸福平安
+};
+
+// 状态列表
+const states = ['tree', 'text1', 'text2', 'text3'];
+let currentStateIndex = 0; // 当前播放到第几个状态
+let lastStateChangeTime = 0; // 上次切换的时间
+
 let rotationAngle = 0;
 
 // --- 配置 ---
 const config = {
-    text: ["00姐", "圣诞快乐"], 
-    // [关键修改 1] 粒子数量翻倍，确保能铺满复杂的汉字
-    particleCount: 3000, 
-    // [微调] 粒子稍微改小一点点，避免太密糊在一起
-    particleSize: 2.2,   
+    // 这里定义三段文字内容
+    texts: [
+        "00姐", 
+        "圣诞快乐", 
+        "幸福平安"
+    ],
+    duration: 5000, // 每个阶段持续 5 秒
+    particleCount: 3000, // 保持高密度，确保字清晰
+    particleSize: 2.2,
     colors: ['#4285F4', '#EA4335', '#34A853', '#FBBC05', '#FFFFFF', '#00FFFF'],
-    transitionSpeed: 0.04, // 稍微慢一点点，让飞行更优雅
+    transitionSpeed: 0.04,
     rotationSpeed: 0.005,
     depth: 800
 };
@@ -45,11 +60,11 @@ class Particle {
     }
 
     update(time) {
-        let targetList = (state === 'tree') ? targets.tree : targets.text;
+        // [关键] 根据当前状态索引，获取对应的目标列表
+        const stateName = states[currentStateIndex];
+        let targetList = targets[stateName];
         
-        // 循环分配目标点，如果目标点比粒子少，就会有重叠；
-        // 如果目标点比粒子多，这段逻辑会导致只显示前 config.particleCount 个点
-        // 所以我们在 createTextPoints 里加了“打乱”逻辑作为保险
+        // 循环取点
         let t = targetList[this.targetIndex % targetList.length] || {x: 0, y: 0, z: 0};
 
         const tx = t.x;
@@ -58,25 +73,30 @@ class Particle {
 
         let rx, ry, rz;
 
-        if (state === 'tree') {
+        // 只有在 'tree' 状态下才计算旋转
+        if (stateName === 'tree') {
             const cos = Math.cos(rotationAngle);
             const sin = Math.sin(rotationAngle);
             rx = tx * cos - tz * sin;
             ry = ty;
             rz = tx * sin + tz * cos;
         } else {
+            // 文字状态下，不旋转，保持正对屏幕
             rx = tx;
             ry = ty;
             rz = tz;
         }
 
+        // 粒子飞行
         this.x += (rx - this.x) * config.transitionSpeed;
         this.y += (ry - this.y) * config.transitionSpeed;
         this.z += (rz - this.z) * config.transitionSpeed;
 
+        // 波动效果
         const waveX = Math.sin(time * 0.002 + this.waveOffset) * 5;
         const waveY = Math.cos(time * 0.002 + this.waveOffset) * 5;
         
+        // 3D 投影
         const scale = config.depth / (config.depth + this.z);
         this.screenX = width / 2 + (this.x + waveX) * scale;
         this.screenY = height / 2 + (this.y + waveY) * scale;
@@ -118,41 +138,35 @@ function createTreePoints() {
     }
 }
 
-function createTextPoints() {
-    targets.text = [];
+// [修改] 通用的文字点生成函数，可以生成任意一段文字的点
+function createPointsForString(textStr) {
+    const points = [];
     const vCanvas = document.createElement('canvas');
     const vSize = 1000; 
     vCanvas.width = vSize;
     vCanvas.height = vSize;
     const vCtx = vCanvas.getContext('2d');
 
-    vCtx.font = 'bold 120px "Microsoft YaHei", Arial, sans-serif';
+    vCtx.font = 'bold 150px "Microsoft YaHei", Arial, sans-serif'; // 字号稍微调大
     vCtx.fillStyle = '#fff';
     vCtx.textAlign = 'center';
     vCtx.textBaseline = 'middle';
 
-    const lines = config.text;
-    const lineHeight = 160; 
-    const totalHeight = lines.length * lineHeight;
-    const startY = (vSize - totalHeight) / 2 + lineHeight / 2;
-
-    lines.forEach((line, i) => {
-        vCtx.fillText(line, vSize / 2, startY + i * lineHeight);
-    });
+    // 绘制文字
+    vCtx.fillText(textStr, vSize / 2, vSize / 2);
 
     const imageData = vCtx.getImageData(0, 0, vSize, vSize).data;
-    // [关键修改 2] 采样步长稍微调大一点点 (4->5)，
-    // 这样可以在有限的粒子数下覆盖更大的面积
     const step = 5; 
 
-    const targetWidth = width * 0.9;
+    // 缩放比例
+    const targetWidth = width * 0.8; // 文字占宽 80%
     const scale = targetWidth / vSize;
 
     for (let y = 0; y < vSize; y += step) {
         for (let x = 0; x < vSize; x += step) {
             const alpha = imageData[(y * vSize + x) * 4 + 3];
             if (alpha > 128) {
-                targets.text.push({
+                points.push({
                     x: (x - vSize/2) * scale,
                     y: (y - vSize/2) * scale,
                     z: 0
@@ -160,49 +174,51 @@ function createTextPoints() {
             }
         }
     }
+    
+    // 随机打乱
+    points.sort(() => Math.random() - 0.5);
 
-    // [关键修改 3] 随机打乱目标点
-    // 这样即使粒子不够，也是整体变淡，而不会出现下半部分直接消失的情况
-    targets.text.sort(() => Math.random() - 0.5);
-
-    // 如果粒子数远小于目标点数，截取前 N 个，保证性能
-    if (targets.text.length > config.particleCount) {
-        // 实际上因为我们已经打乱了，所以截取前 N 个就是随机采样的效果
-        targets.text = targets.text.slice(0, config.particleCount);
-    }
-
-    if (targets.text.length === 0) {
-        for (let i = 0; i < config.particleCount; i++) {
-            const theta = Math.random() * Math.PI * 2;
-            const r = 300;
-            targets.text.push({
-                x: r * Math.cos(theta),
-                y: r * Math.sin(theta),
-                z: 0
-            });
+    // 兜底：如果没生成点，生成圆球
+    if (points.length === 0) {
+        for (let i = 0; i < 100; i++) {
+             points.push({x:0, y:0, z:0});
         }
     }
+    return points;
+}
+
+function initAllTargets() {
+    // 1. 生成树
+    createTreePoints();
+    
+    // 2. 分别生成三段文字的目标点
+    targets.text1 = createPointsForString(config.texts[0]); // 00姐
+    targets.text2 = createPointsForString(config.texts[1]); // 圣诞快乐
+    targets.text3 = createPointsForString(config.texts[2]); // 幸福平安
 }
 
 // ==========================================
 // 动画循环
 // ==========================================
-let startTime = null;
-
 function animate(timestamp) {
-    if (!startTime) startTime = timestamp;
-    const progress = timestamp - startTime;
+    if (!lastStateChangeTime) lastStateChangeTime = timestamp;
+    
+    // [关键] 循环控制逻辑
+    const elapsed = timestamp - lastStateChangeTime;
+    if (elapsed > config.duration) {
+        // 时间到，切换到下一个状态
+        currentStateIndex = (currentStateIndex + 1) % states.length;
+        lastStateChangeTime = timestamp;
+        console.log("Switching to state:", states[currentStateIndex]);
+    }
 
-    if (state === 'tree') {
+    // 只有在树的状态下旋转
+    if (states[currentStateIndex] === 'tree') {
         rotationAngle += config.rotationSpeed;
     }
 
     ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
     ctx.fillRect(0, 0, width, height);
-
-    if (state === 'tree' && progress > 4000) {
-        state = 'text';
-    }
 
     particles.forEach(p => {
         p.update(timestamp);
@@ -217,24 +233,22 @@ function animate(timestamp) {
 // ==========================================
 function init() {
     resize();
-    createTreePoints();
-    createTextPoints();
+    initAllTargets();
     
     particles = [];
     for (let i = 0; i < config.particleCount; i++) {
         particles.push(new Particle(i));
     }
     
-    startTime = null;
-    state = 'tree';
+    currentStateIndex = 0;
+    lastStateChangeTime = 0;
     rotationAngle = 0;
     animate();
 }
 
 window.addEventListener('resize', () => {
     resize();
-    createTreePoints();
-    createTextPoints();
+    initAllTargets(); // 重新计算位置
 });
 
 init();
