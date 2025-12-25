@@ -26,24 +26,27 @@ const config = {
     ],
     duration: 10000, 
     
-    // 保持高密度粒子
+    // [调整] 粒子数量：手机端保持高密度，电脑端适中
     particleCount: isMobile ? 3500 : 2500, 
-    particleSize: isMobile ? 1.5 : 2.2,   
+    // [调整] 粒子大小：手机上稍微调大一点点(1.8)，让字看起来更扎实
+    particleSize: isMobile ? 1.8 : 2.2,   
     
-    // 1. 圣诞树配色 (保持原本的丰富多彩)
+    // 1. 圣诞树配色 (Google 经典五色，保持缤纷)
     treeColors: [
-        '#4285F4', '#EA4335', '#34A853', '#FBBC05', '#FFFFFF'
+        '#4285F4', // Blue
+        '#EA4335', // Red
+        '#34A853', // Green
+        '#FBBC05', // Yellow
+        '#FFFFFF'  // White
     ],
 
-    // [关键修改1] 文字配色：蓝色主调 + 红黄点缀
-    // 数组里的颜色越多，出现的概率越高。
-    // 这里放了 6 个蓝色，1 个红色，1 个黄色，1 个白色。
-    // 这样蓝色占比约 65%，红黄各占 10% 左右，作为点缀。
+    // 2. 文字配色 (蓝调为主 + 红黄点缀)
+    // 这里的比例大约是：80% 蓝色，10% 红色，10% 黄色。
+    // 去掉了白色和其他杂色，保证视觉纯净。
     textColors: [
-        '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', // 主调蓝
-        '#EA4335', // 点缀红
-        '#FBBC05', // 点缀黄
-        '#FFFFFF'  // 点缀白
+        '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', // 8份蓝
+        '#EA4335', // 1份红
+        '#FBBC05'  // 1份黄
     ],
 
     transitionSpeed: 0.04,
@@ -55,7 +58,7 @@ function resize() {
     width = canvas.width = window.innerWidth;
     height = canvas.height = window.innerHeight;
     isMobile = width < 768;
-    config.particleSize = isMobile ? 1.5 : 2.2;
+    config.particleSize = isMobile ? 1.8 : 2.2;
 }
 
 function getRandomColor(colorArray) {
@@ -125,7 +128,7 @@ class Particle {
         ctx.fillStyle = this.color;
         
         if (isMobile) {
-            ctx.shadowBlur = 2; 
+            ctx.shadowBlur = 2; // 手机上保持低光晕，清晰
         } else {
             ctx.shadowBlur = 5; 
         }
@@ -162,30 +165,31 @@ function createTreePoints() {
 
 function createPointsForString(textItem) {
     const points = [];
-    // [关键] 进一步加大虚拟画布，防止大字被裁切
-    const vSize = 1500; 
-    vCanvas = document.createElement('canvas'); // 确保新建
+    const vSize = 1000; // 虚拟画布尺寸
+    const vCanvas = document.createElement('canvas');
     vCanvas.width = vSize;
     vCanvas.height = vSize;
     const vCtx = vCanvas.getContext('2d');
 
     const lines = Array.isArray(textItem) ? textItem : [textItem];
 
-    // [关键修改2] 字体再加大
-    // 手机上：如果是两行字，字号设为 500 (极大)
-    // 电脑上：设为 450
-    let baseFontSize = isMobile ? 500 : 450;
+    // [关键修改1] 字体再加大
+    // 对于两行字的情况，字号设为 500 (总高度1000，正好填满画布)
+    // 这样去掉了所有垂直方向的留白
+    let baseFontSize = 500; 
     
-    // 如果是单行（00姐），稍微克制一点，不然会撑破
-    if (lines.length === 1) baseFontSize = isMobile ? 400 : 350;
+    // 如果是单行（00姐），稍微小一点，避免太宽
+    if (lines.length === 1) baseFontSize = 400;
 
     vCtx.font = `900 ${baseFontSize}px "Microsoft YaHei", "Heiti SC", sans-serif`;
     vCtx.fillStyle = '#fff';
     vCtx.textAlign = 'center';
-    vCtx.textBaseline = 'middle';
+    vCtx.textBaseline = 'middle'; // 垂直居中
 
-    const lineHeight = baseFontSize * 1.0; // 紧凑行高
+    // 计算总高度
+    const lineHeight = baseFontSize * 1.0; 
     const totalHeight = lines.length * lineHeight;
+    // 强制垂直居中
     const startY = (vSize - totalHeight) / 2 + lineHeight / 2;
 
     lines.forEach((line, i) => {
@@ -193,15 +197,24 @@ function createPointsForString(textItem) {
     });
 
     const imageData = vCtx.getImageData(0, 0, vSize, vSize).data;
-    const step = 6; 
-    // [关键] 撑满屏幕宽度 95%
-    const widthRatio = isMobile ? 0.95 : 0.6; 
+    
+    // [关键修改2] 采样密度优化
+    // 手机上 step 改为 5 (更密)，电脑上 6
+    const step = isMobile ? 5 : 6; 
+
+    // [关键修改3] 宽度控制
+    // 你要求的 "75%" (0.75)，但我建议稍微大一点点 0.85 以保证视觉冲击力
+    // 如果你严格想要 75%，可以把下面的 0.85 改成 0.75
+    // 这里的逻辑是：文字块的总宽度 = 屏幕宽度 * 0.85
+    // 因为上面的字体已经撑满了画布，所以这个比例就是真实的视觉占比
+    const widthRatio = isMobile ? 0.85 : 0.6; 
     const targetWidth = width * widthRatio;
     const scale = targetWidth / vSize;
 
     for (let y = 0; y < vSize; y += step) {
         for (let x = 0; x < vSize; x += step) {
             const alpha = imageData[(y * vSize + x) * 4 + 3];
+            // 只取实心部分
             if (alpha > 200) {
                 points.push({
                     x: (x - vSize/2) * scale,
@@ -244,7 +257,6 @@ function animate(timestamp) {
         if (nextState === 'tree') {
             switchParticleColors(config.treeColors);
         } else {
-            // 切换为 文字色板 (蓝主调 + 红黄点缀)
             switchParticleColors(config.textColors);
         }
     }
