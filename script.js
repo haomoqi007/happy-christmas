@@ -26,27 +26,19 @@ const config = {
     ],
     duration: 10000, 
     
-    // [调整] 粒子数量：手机端保持高密度，电脑端适中
     particleCount: isMobile ? 3500 : 2500, 
-    // [调整] 粒子大小：手机上稍微调大一点点(1.8)，让字看起来更扎实
-    particleSize: isMobile ? 1.8 : 2.2,   
+    particleSize: isMobile ? 1.5 : 2.2,   
     
-    // 1. 圣诞树配色 (Google 经典五色，保持缤纷)
+    // 1. 圣诞树配色
     treeColors: [
-        '#4285F4', // Blue
-        '#EA4335', // Red
-        '#34A853', // Green
-        '#FBBC05', // Yellow
-        '#FFFFFF'  // White
+        '#4285F4', '#EA4335', '#34A853', '#FBBC05', '#FFFFFF'
     ],
 
     // 2. 文字配色 (蓝调为主 + 红黄点缀)
-    // 这里的比例大约是：80% 蓝色，10% 红色，10% 黄色。
-    // 去掉了白色和其他杂色，保证视觉纯净。
     textColors: [
-        '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', // 8份蓝
-        '#EA4335', // 1份红
-        '#FBBC05'  // 1份黄
+        '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', // 蓝
+        '#EA4335', // 红
+        '#FBBC05'  // 黄
     ],
 
     transitionSpeed: 0.04,
@@ -58,7 +50,7 @@ function resize() {
     width = canvas.width = window.innerWidth;
     height = canvas.height = window.innerHeight;
     isMobile = width < 768;
-    config.particleSize = isMobile ? 1.8 : 2.2;
+    config.particleSize = isMobile ? 1.5 : 2.2;
 }
 
 function getRandomColor(colorArray) {
@@ -128,7 +120,7 @@ class Particle {
         ctx.fillStyle = this.color;
         
         if (isMobile) {
-            ctx.shadowBlur = 2; // 手机上保持低光晕，清晰
+            ctx.shadowBlur = 2; 
         } else {
             ctx.shadowBlur = 5; 
         }
@@ -146,7 +138,8 @@ function createTreePoints() {
     targets.tree = [];
     const count = config.particleCount;
     const heightRange = height * 0.75;
-    const maxRadius = Math.min(width * 0.4, height * 0.3); 
+    // 电脑上让树稍微小一点，精致一些
+    const maxRadius = isMobile ? Math.min(width * 0.4, height * 0.3) : Math.min(width * 0.25, height * 0.3);
     const yOffset = -height * 0.05; 
 
     for (let i = 0; i < count; i++) {
@@ -165,31 +158,26 @@ function createTreePoints() {
 
 function createPointsForString(textItem) {
     const points = [];
-    const vSize = 1000; // 虚拟画布尺寸
-    const vCanvas = document.createElement('canvas');
+    // 虚拟画布尺寸固定为 1000，方便计算
+    const vSize = 1000; 
+    vCanvas = document.createElement('canvas');
     vCanvas.width = vSize;
     vCanvas.height = vSize;
     const vCtx = vCanvas.getContext('2d');
 
     const lines = Array.isArray(textItem) ? textItem : [textItem];
 
-    // [关键修改1] 字体再加大
-    // 对于两行字的情况，字号设为 500 (总高度1000，正好填满画布)
-    // 这样去掉了所有垂直方向的留白
+    // 虚拟画布里的字号，撑满画布
     let baseFontSize = 500; 
-    
-    // 如果是单行（00姐），稍微小一点，避免太宽
     if (lines.length === 1) baseFontSize = 400;
 
     vCtx.font = `900 ${baseFontSize}px "Microsoft YaHei", "Heiti SC", sans-serif`;
     vCtx.fillStyle = '#fff';
     vCtx.textAlign = 'center';
-    vCtx.textBaseline = 'middle'; // 垂直居中
+    vCtx.textBaseline = 'middle';
 
-    // 计算总高度
     const lineHeight = baseFontSize * 1.0; 
     const totalHeight = lines.length * lineHeight;
-    // 强制垂直居中
     const startY = (vSize - totalHeight) / 2 + lineHeight / 2;
 
     lines.forEach((line, i) => {
@@ -198,23 +186,25 @@ function createPointsForString(textItem) {
 
     const imageData = vCtx.getImageData(0, 0, vSize, vSize).data;
     
-    // [关键修改2] 采样密度优化
-    // 手机上 step 改为 5 (更密)，电脑上 6
     const step = isMobile ? 5 : 6; 
 
-    // [关键修改3] 宽度控制
-    // 你要求的 "75%" (0.75)，但我建议稍微大一点点 0.85 以保证视觉冲击力
-    // 如果你严格想要 75%，可以把下面的 0.85 改成 0.75
-    // 这里的逻辑是：文字块的总宽度 = 屏幕宽度 * 0.85
-    // 因为上面的字体已经撑满了画布，所以这个比例就是真实的视觉占比
-    const widthRatio = isMobile ? 0.85 : 0.6; 
-    const targetWidth = width * widthRatio;
-    const scale = targetWidth / vSize;
+    // [⭐核心修复⭐] 智能缩放计算
+    // 定义屏幕上的可用区域（安全框）
+    // 手机：宽占90%，高占80%
+    // 电脑：宽占70%，高占70% (防止扁屏幕溢出)
+    const availWidth = width * (isMobile ? 0.9 : 0.7);
+    const availHeight = height * (isMobile ? 0.8 : 0.7);
+
+    // 计算宽度和高度分别需要的缩放比例
+    const scaleX = availWidth / vSize;
+    const scaleY = availHeight / vSize;
+
+    // [关键] 取两者中较小的那个比例，确保既不超宽也不超高
+    const scale = Math.min(scaleX, scaleY);
 
     for (let y = 0; y < vSize; y += step) {
         for (let x = 0; x < vSize; x += step) {
             const alpha = imageData[(y * vSize + x) * 4 + 3];
-            // 只取实心部分
             if (alpha > 200) {
                 points.push({
                     x: (x - vSize/2) * scale,
