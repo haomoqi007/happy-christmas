@@ -1,14 +1,18 @@
-body, html {
+* {
     margin: 0;
     padding: 0;
+    box-sizing: border-box;
+}
+
+body, html {
     width: 100%;
     height: 100%;
-    background-color: #000; /* 全黑背景 */
+    background-color: #000; /* 纯黑背景，突出光点 */
     overflow: hidden; /* 隐藏滚动条 */
 }
 
 canvas {
     display: block;
-    /* 可以添加一点模糊滤镜让光点看起来更柔和，类似参考图 */
-    filter: blur(1px); 
+    /* 可以添加一点模糊滤镜让光点看起来有发光感，类似Gemini */
+    filter: blur(0.8px); 
 }
