@@ -43,7 +43,6 @@ const config = {
 
     transitionSpeed: 0.04,
     rotationSpeed: 0.005,
-    // [关键修复] 增加视距深度，防止大树因为离屏幕太近而消失
     depth: 1500 
 };
 
@@ -109,7 +108,6 @@ class Particle {
         const waveX = Math.sin(time * 0.002 + this.waveOffset) * 5;
         const waveY = Math.cos(time * 0.002 + this.waveOffset) * 5;
         
-        // 防止除以0或负数导致的闪烁/消失
         const dist = config.depth + this.z;
         const scale = (dist > 0) ? (config.depth / dist) : 0;
 
@@ -119,7 +117,6 @@ class Particle {
     }
 
     draw() {
-        // 如果粒子在视线后方，不绘制
         if (this.screenSize <= 0.1) return;
 
         ctx.beginPath();
@@ -142,33 +139,32 @@ class Particle {
 // 目标生成器
 // ==========================================
 
-// [⭐ 绝对正确的正向树形算法]
 function createTreePoints() {
     targets.tree = [];
     const count = config.particleCount;
     const treeHeight = height * 0.85; 
     const maxBaseRadius = Math.min(width * 0.35, height * 0.3); 
-    const yOffset = -height * 0.1; 
+    
+    // [⭐关键修改：调整树的垂直位置]
+    // 之前是 -0.1 (向上偏移)，现在改成 +0.05 (向下偏移)
+    // 这样树的重心会下移，视觉上更稳
+    const yOffset = height * 0.05; 
 
     for (let i = 0; i < count; i++) {
-        // 1. 高度 h: 0(顶部) -> 1(底部)
-        // 使用 sqrt 让底部粒子多，顶部粒子少
+        // 高度 h: 0(顶部) -> 1(底部)
         const h = Math.sqrt(Math.random());
 
-        // 2. Y坐标: 负数在上面，正数在下面
-        // h=0 -> y = 顶端; h=1 -> y = 底端
+        // Y坐标计算
         const y = (h - 0.5) * treeHeight + yOffset;
 
-        // 3. 半径 r: 顶部窄，底部宽
-        // h=0 -> r=0 (尖); h=1 -> r=Max (宽)
+        // 半径 r
         let r = maxBaseRadius * h;
 
-        // 4. 加入自然螺旋和分层
+        // 螺旋和分层纹理
         const layers = 8;
         const layerEffect = 1 + 0.2 * Math.sin(h * layers * Math.PI * 2);
-        const spiralAngle = i * 0.1 + h * Math.PI * 6; // 螺旋因子
+        const spiralAngle = i * 0.1 + h * Math.PI * 6; 
 
-        // 最终半径
         const finalRadius = r * layerEffect * (0.8 + 0.2 * Math.random());
 
         targets.tree.push({
@@ -182,7 +178,6 @@ function createTreePoints() {
 
 function createPointsForString(textItem) {
     const points = [];
-    // [关键修复] 之前这里漏了 const，导致报错
     const vSize = 1500; 
     const vCanvas = document.createElement('canvas'); 
     vCanvas.width = vSize;
@@ -244,9 +239,6 @@ function initAllTargets() {
     targets.text3 = createPointsForString(config.texts[2]); 
 }
 
-// ==========================================
-// 动画循环
-// ==========================================
 function animate(timestamp) {
     if (!lastStateChangeTime) lastStateChangeTime = timestamp;
     
