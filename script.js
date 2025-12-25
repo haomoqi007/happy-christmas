@@ -29,16 +29,16 @@ const config = {
     particleCount: isMobile ? 3500 : 2500, 
     particleSize: isMobile ? 1.5 : 2.2,   
     
-    // 1. 圣诞树配色
+    // 1. 圣诞树配色 (Google 经典五色)
     treeColors: [
         '#4285F4', '#EA4335', '#34A853', '#FBBC05', '#FFFFFF'
     ],
 
     // 2. 文字配色 (蓝调为主 + 红黄点缀)
     textColors: [
-        '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', // 蓝
-        '#EA4335', // 红
-        '#FBBC05'  // 黄
+        '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4', '#4285F4',
+        '#EA4335', 
+        '#FBBC05'  
     ],
 
     transitionSpeed: 0.04,
@@ -134,32 +134,57 @@ class Particle {
 // ==========================================
 // 目标生成器
 // ==========================================
+
+// [⭐核心修改⭐] 全新的真实树形生成算法
 function createTreePoints() {
     targets.tree = [];
     const count = config.particleCount;
-    const heightRange = height * 0.75;
-    // 电脑上让树稍微小一点，精致一些
-    const maxRadius = isMobile ? Math.min(width * 0.4, height * 0.3) : Math.min(width * 0.25, height * 0.3);
+    const treeHeight = height * 0.75;
+    // 稍微加宽底部，让树看起来更稳重
+    const maxBaseRadius = Math.min(width * 0.45, height * 0.35); 
     const yOffset = -height * 0.05; 
 
     for (let i = 0; i < count; i++) {
-        const p = i / count;
-        const y = -heightRange/2 + p * heightRange + yOffset;
-        const radius = maxRadius * p;
-        const angle = i * 0.6; 
+        // 1. 高度 h (从 0 底部 到 1 顶部)
+        // 使用 pow 让底部的粒子稍微密集一点，重心更稳
+        const h = Math.pow(Math.random(), 0.8);
+        // 映射到屏幕 Y 坐标
+        const y = (h - 0.5) * treeHeight + yOffset;
 
+        // 2. 基础圆锥半径 (越往上越窄)
+        const baseRadius = maxBaseRadius * (1 - h);
+
+        // 3. [关键] 分层效果 (Layering Effect)
+        // 模仿真实树木一层层的树枝。设置约 7 层。
+        // 使用 sin 函数创造波浪起伏，abs 让波浪向外凸起。
+        // (1-h)*0.3 意味着越往树顶，分层效果越不明显。
+        const layers = 7;
+        const layerBulge = (1 - h) * 0.3 * Math.abs(Math.sin(h * Math.PI * layers));
+
+        // 4. [关键] 自然噪点 (Natural Noise)
+        // 让树枝边缘不那么圆滑，增加参差感
+        const angle = Math.random() * Math.PI * 2;
+        const branchNoise = 0.05 * Math.sin(angle * 5 + h * 10);
+
+        // 5. [关键] 最终半径计算 (Volumetric Radius)
+        // 结合基础半径、分层凸起和噪点。
+        // Math.sqrt(Math.random()) 用于让粒子均匀填充在圆内，而不是聚集在中心，制造体积感。
+        const finalRadius = baseRadius * (1 + layerBulge + branchNoise) * Math.sqrt(Math.random());
+
+        // 生成 3D 坐标 (注意 Y 轴方向)
         targets.tree.push({
-            x: Math.cos(angle) * radius,
-            y: y,
-            z: Math.sin(angle) * radius
+            x: Math.cos(angle) * finalRadius,
+            y: -y, // 取反，因为屏幕坐标 Y 向下为正
+            z: Math.sin(angle) * finalRadius
         });
     }
+    // 打乱顺序，让变换更自然
+    targets.tree.sort(() => Math.random() - 0.5);
 }
 
 function createPointsForString(textItem) {
     const points = [];
-    // 虚拟画布尺寸固定为 1000，方便计算
-    const vSize = 1000; 
+    const vSize = 1500; 
     vCanvas = document.createElement('canvas');
     vCanvas.width = vSize;
     vCanvas.height = vSize;
@@ -167,7 +192,6 @@ function createPointsForString(textItem) {
 
     const lines = Array.isArray(textItem) ? textItem : [textItem];
 
-    // 虚拟画布里的字号，撑满画布
     let baseFontSize = 500; 
     if (lines.length === 1) baseFontSize = 400;
 
@@ -185,21 +209,12 @@ function createPointsForString(textItem) {
     });
 
     const imageData = vCtx.getImageData(0, 0, vSize, vSize).data;
-    
     const step = isMobile ? 5 : 6; 
 
-    // [⭐核心修复⭐] 智能缩放计算
-    // 定义屏幕上的可用区域（安全框）
-    // 手机：宽占90%，高占80%
-    // 电脑：宽占70%，高占70% (防止扁屏幕溢出)
     const availWidth = width * (isMobile ? 0.9 : 0.7);
     const availHeight = height * (isMobile ? 0.8 : 0.7);
-
-    // 计算宽度和高度分别需要的缩放比例
     const scaleX = availWidth / vSize;
     const scaleY = availHeight / vSize;
-
-    // [关键] 取两者中较小的那个比例，确保既不超宽也不超高
     const scale = Math.min(scaleX, scaleY);
 
     for (let y = 0; y < vSize; y += step) {
