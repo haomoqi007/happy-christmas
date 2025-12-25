@@ -15,20 +15,31 @@ let currentStateIndex = 0;
 let lastStateChangeTime = 0; 
 
 let rotationAngle = 0;
+// 判断是否为手机端
+let isMobile = window.innerWidth < 768;
 
-// --- 配置 ---
+// --- 核心配置 ---
 const config = {
     texts: [
         "00姐", 
         "圣诞快乐", 
         "幸福平安"
     ],
-    // [修改 1] 时间改为 10 秒
-    duration: 10000, 
-    particleCount: 3000, 
-    // [微调] 粒子大小稍微调大一点点，增加手机上的可见度
-    particleSize: 2.5,   
-    colors: ['#4285F4', '#EA4335', '#34A853', '#FBBC05', '#FFFFFF', '#00FFFF'],
+    duration: 10000, // 10秒切换
+    
+    // [关键修改1] 针对手机和电脑设置不同的粒子参数
+    // 手机：粒子更多但更小，防糊；电脑：粒子适中偏大
+    particleCount: isMobile ? 3500 : 2500, 
+    particleSize: isMobile ? 1.5 : 2.2,   
+    
+    // [关键修改2] 严格使用 Gemini/Google 官方品牌色 + 纯白
+    colors: [
+        '#4285F4', // Google Blue
+        '#EA4335', // Google Red
+        '#34A853', // Google Green
+        '#FBBC05', // Google Yellow
+        '#FFFFFF'  // Pure White (Sparkle)
+    ],
     transitionSpeed: 0.04,
     rotationSpeed: 0.005,
     depth: 800
@@ -37,6 +48,9 @@ const config = {
 function resize() {
     width = canvas.width = window.innerWidth;
     height = canvas.height = window.innerHeight;
+    isMobile = width < 768;
+    // 窗口大小改变时，动态调整粒子大小
+    config.particleSize = isMobile ? 1.5 : 2.2;
 }
 
 function getRandomColor() {
@@ -53,7 +67,8 @@ class Particle {
         this.z = (Math.random() - 0.5) * 500;
         
         this.targetIndex = index;
-        this.size = config.particleSize * (0.8 + Math.random() * 0.5);
+        // 粒子大小随机微调，增加层次感
+        this.size = config.particleSize * (0.8 + Math.random() * 0.4);
         this.color = getRandomColor();
         this.waveOffset = Math.random() * 100;
     }
@@ -61,6 +76,7 @@ class Particle {
     update(time) {
         const stateName = states[currentStateIndex];
         let targetList = targets[stateName];
+        // 循环分配目标，确保所有粒子都有去处
         let t = targetList[this.targetIndex % targetList.length] || {x: 0, y: 0, z: 0};
 
         const tx = t.x;
@@ -69,6 +85,7 @@ class Particle {
 
         let rx, ry, rz;
 
+        // 只有树的状态旋转
         if (stateName === 'tree') {
             const cos = Math.cos(rotationAngle);
             const sin = Math.sin(rotationAngle);
@@ -81,13 +98,16 @@ class Particle {
             rz = tz;
         }
 
+        // 飞行逻辑
         this.x += (rx - this.x) * config.transitionSpeed;
         this.y += (ry - this.y) * config.transitionSpeed;
         this.z += (rz - this.z) * config.transitionSpeed;
 
+        // 波动逻辑
         const waveX = Math.sin(time * 0.002 + this.waveOffset) * 5;
         const waveY = Math.cos(time * 0.002 + this.waveOffset) * 5;
         
+        // 3D 投影
         const scale = config.depth / (config.depth + this.z);
         this.screenX = width / 2 + (this.x + waveX) * scale;
         this.screenY = height / 2 + (this.y + waveY) * scale;
@@ -98,8 +118,16 @@ class Particle {
         ctx.beginPath();
         ctx.arc(this.screenX, this.screenY, this.screenSize, 0, Math.PI * 2);
         ctx.fillStyle = this.color;
-        ctx.shadowBlur = 5;
+        
+        // [关键修改3] 优化发光效果
+        // 手机上光晕太重会糊，所以手机上减小 blur，电脑上保持
+        if (isMobile) {
+            ctx.shadowBlur = 2; // 手机微弱光晕，保持锐利
+        } else {
+            ctx.shadowBlur = 5; // 电脑光晕强一点
+        }
         ctx.shadowColor = this.color;
+        
         ctx.fill();
         ctx.shadowBlur = 0;
     }
@@ -111,16 +139,15 @@ class Particle {
 function createTreePoints() {
     targets.tree = [];
     const count = config.particleCount;
-    const heightRange = height * 0.7;
-    // [适配] 手机上树稍微瘦一点，防止超出屏幕
-    const maxRadius = Math.min(width * 0.4, height * 0.25); 
+    const heightRange = height * 0.75;
+    const maxRadius = Math.min(width * 0.4, height * 0.3); 
     const yOffset = -height * 0.05; 
 
     for (let i = 0; i < count; i++) {
         const p = i / count;
         const y = -heightRange/2 + p * heightRange + yOffset;
         const radius = maxRadius * p;
-        const angle = i * 0.5; 
+        const angle = i * 0.6; // 稍微调整螺旋角度
 
         targets.tree.push({
             x: Math.cos(angle) * radius,
@@ -130,46 +157,40 @@ function createTreePoints() {
     }
 }
 
-// [关键修改] 增强版文字点生成，适配手机
 function createPointsForString(textStr) {
     const points = [];
     const vCanvas = document.createElement('canvas');
-    // 虚拟画布尺寸保持 1000，方便计算
-    const vSize = 1000; 
+    // 增加虚拟画布分辨率，让采样更精准
+    const vSize = 1200; 
     vCanvas.width = vSize;
     vCanvas.height = vSize;
     const vCtx = vCanvas.getContext('2d');
 
-    // [关键] 判断是不是手机 (屏幕宽度小于 768px 视为手机)
-    const isMobile = width < 768;
-
-    // [关键] 字体大小策略：
-    // 如果是手机，用超大字体填满虚拟画布，保证笔画够粗
-    const fontSize = isMobile ? 250 : 200; 
-    vCtx.font = `bold ${fontSize}px "Microsoft YaHei", Arial, sans-serif`;
+    // [关键修改4] 字体优化
+    // font-weight: 900 (最粗)，确保笔画够粗，能容纳更多粒子
+    const fontSize = isMobile ? 300 : 250; 
+    vCtx.font = `900 ${fontSize}px "Microsoft YaHei", "Heiti SC", sans-serif`;
     vCtx.fillStyle = '#fff';
     vCtx.textAlign = 'center';
     vCtx.textBaseline = 'middle';
 
-    // 绘制文字
     vCtx.fillText(textStr, vSize / 2, vSize / 2);
 
     const imageData = vCtx.getImageData(0, 0, vSize, vSize).data;
-    // 采样步长：越小越精细，但点越多。这里取 5 比较平衡
-    const step = 5; 
+    // 采样步长：步长越小，点越密。
+    // 手机上为了防糊，我们步长设小一点（密集），但粒子设小（防重叠）
+    const step = 6; 
 
-    // [关键] 屏幕缩放策略：
-    // 如果是手机，让文字宽度占满屏幕的 95%，否则占 70%
-    const widthRatio = isMobile ? 0.95 : 0.7; 
+    // 缩放逻辑：手机占宽 95%，电脑占 60%
+    const widthRatio = isMobile ? 0.95 : 0.6; 
     const targetWidth = width * widthRatio;
-    
-    // 计算缩放比例
     const scale = targetWidth / vSize;
 
     for (let y = 0; y < vSize; y += step) {
         for (let x = 0; x < vSize; x += step) {
             const alpha = imageData[(y * vSize + x) * 4 + 3];
-            if (alpha > 128) {
+            // 只取完全不透明的点，保证边缘锐利
+            if (alpha > 200) {
                 points.push({
                     x: (x - vSize/2) * scale,
                     y: (y - vSize/2) * scale,
@@ -179,7 +200,7 @@ function createPointsForString(textStr) {
         }
     }
     
-    // 随机打乱，防止截断
+    // 随机打乱
     points.sort(() => Math.random() - 0.5);
 
     // 兜底
@@ -212,7 +233,7 @@ function animate(timestamp) {
         rotationAngle += config.rotationSpeed;
     }
 
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)'; // 稍微加深残影清除，让画面更干净
     ctx.fillRect(0, 0, width, height);
 
     particles.forEach(p => {
@@ -231,6 +252,7 @@ function init() {
     initAllTargets();
     
     particles = [];
+    // 使用配置中的粒子数量
     for (let i = 0; i < config.particleCount; i++) {
         particles.push(new Particle(i));
     }
@@ -243,7 +265,12 @@ function init() {
 
 window.addEventListener('resize', () => {
     resize();
-    initAllTargets(); 
+    initAllTargets();
+    // 窗口大改时重建粒子，确保数量适配
+    particles = [];
+    for (let i = 0; i < config.particleCount; i++) {
+        particles.push(new Particle(i));
+    }
 });
 
 init();
