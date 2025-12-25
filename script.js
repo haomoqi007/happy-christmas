@@ -9,12 +9,13 @@ let rotationAngle = 0;
 
 // --- 配置 ---
 const config = {
-    // [修改点] 这里改成了你想要的内容
     text: ["00姐", "圣诞快乐"], 
-    particleCount: 1500, // 粒子数量
-    particleSize: 2.5,   // 粒子大小
+    // [关键修改 1] 粒子数量翻倍，确保能铺满复杂的汉字
+    particleCount: 3000, 
+    // [微调] 粒子稍微改小一点点，避免太密糊在一起
+    particleSize: 2.2,   
     colors: ['#4285F4', '#EA4335', '#34A853', '#FBBC05', '#FFFFFF', '#00FFFF'],
-    transitionSpeed: 0.05,
+    transitionSpeed: 0.04, // 稍微慢一点点，让飞行更优雅
     rotationSpeed: 0.005,
     depth: 800
 };
@@ -45,7 +46,10 @@ class Particle {
 
     update(time) {
         let targetList = (state === 'tree') ? targets.tree : targets.text;
-        // 循环分配目标点
+        
+        // 循环分配目标点，如果目标点比粒子少，就会有重叠；
+        // 如果目标点比粒子多，这段逻辑会导致只显示前 config.particleCount 个点
+        // 所以我们在 createTextPoints 里加了“打乱”逻辑作为保险
         let t = targetList[this.targetIndex % targetList.length] || {x: 0, y: 0, z: 0};
 
         const tx = t.x;
@@ -54,7 +58,6 @@ class Particle {
 
         let rx, ry, rz;
 
-        // 状态判断：树旋转，文字不转
         if (state === 'tree') {
             const cos = Math.cos(rotationAngle);
             const sin = Math.sin(rotationAngle);
@@ -67,16 +70,13 @@ class Particle {
             rz = tz;
         }
 
-        // 粒子飞行
         this.x += (rx - this.x) * config.transitionSpeed;
         this.y += (ry - this.y) * config.transitionSpeed;
         this.z += (rz - this.z) * config.transitionSpeed;
 
-        // 波动效果
         const waveX = Math.sin(time * 0.002 + this.waveOffset) * 5;
         const waveY = Math.cos(time * 0.002 + this.waveOffset) * 5;
         
-        // 3D 投影
         const scale = config.depth / (config.depth + this.z);
         this.screenX = width / 2 + (this.x + waveX) * scale;
         this.screenY = height / 2 + (this.y + waveY) * scale;
@@ -102,8 +102,6 @@ function createTreePoints() {
     const count = config.particleCount;
     const heightRange = height * 0.7;
     const maxRadius = width * 0.3;
-
-    // 树的位置向上偏移 5%
     const yOffset = -height * 0.05; 
 
     for (let i = 0; i < count; i++) {
@@ -123,20 +121,18 @@ function createTreePoints() {
 function createTextPoints() {
     targets.text = [];
     const vCanvas = document.createElement('canvas');
-    const vSize = 1000; // 大画布保证清晰度
+    const vSize = 1000; 
     vCanvas.width = vSize;
     vCanvas.height = vSize;
     const vCtx = vCanvas.getContext('2d');
 
-    // 字体设置
     vCtx.font = 'bold 120px "Microsoft YaHei", Arial, sans-serif';
     vCtx.fillStyle = '#fff';
     vCtx.textAlign = 'center';
     vCtx.textBaseline = 'middle';
 
-    // 绘制多行文字
     const lines = config.text;
-    const lineHeight = 160; // 行高
+    const lineHeight = 160; 
     const totalHeight = lines.length * lineHeight;
     const startY = (vSize - totalHeight) / 2 + lineHeight / 2;
 
@@ -145,9 +141,10 @@ function createTextPoints() {
     });
 
     const imageData = vCtx.getImageData(0, 0, vSize, vSize).data;
-    const step = 4;
+    // [关键修改 2] 采样步长稍微调大一点点 (4->5)，
+    // 这样可以在有限的粒子数下覆盖更大的面积
+    const step = 5; 
 
-    // 缩放比例：让文字区域占屏幕宽度的 90%
     const targetWidth = width * 0.9;
     const scale = targetWidth / vSize;
 
@@ -164,7 +161,16 @@ function createTextPoints() {
         }
     }
 
-    // 兜底：如果没生成文字点，生成圆球
+    // [关键修改 3] 随机打乱目标点
+    // 这样即使粒子不够，也是整体变淡，而不会出现下半部分直接消失的情况
+    targets.text.sort(() => Math.random() - 0.5);
+
+    // 如果粒子数远小于目标点数，截取前 N 个，保证性能
+    if (targets.text.length > config.particleCount) {
+        // 实际上因为我们已经打乱了，所以截取前 N 个就是随机采样的效果
+        targets.text = targets.text.slice(0, config.particleCount);
+    }
+
     if (targets.text.length === 0) {
         for (let i = 0; i < config.particleCount; i++) {
             const theta = Math.random() * Math.PI * 2;
@@ -187,7 +193,6 @@ function animate(timestamp) {
     if (!startTime) startTime = timestamp;
     const progress = timestamp - startTime;
 
-    // 只有在树的状态下旋转
     if (state === 'tree') {
         rotationAngle += config.rotationSpeed;
     }
@@ -195,7 +200,6 @@ function animate(timestamp) {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
     ctx.fillRect(0, 0, width, height);
 
-    // 4秒后切换为文字
     if (state === 'tree' && progress > 4000) {
         state = 'text';
     }
