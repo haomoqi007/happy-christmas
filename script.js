@@ -145,10 +145,10 @@ function createTreePoints() {
     const treeHeight = height * 0.85; 
     const maxBaseRadius = Math.min(width * 0.35, height * 0.3); 
     
-    // [⭐关键修改：调整树的垂直位置]
-    // 之前是 -0.1 (向上偏移)，现在改成 +0.05 (向下偏移)
-    // 这样树的重心会下移，视觉上更稳
-    const yOffset = height * 0.05; 
+    // [⭐关键位置微调⭐]
+    // 之前是 +0.05 (太低)，现在改为 -0.02 (稍微向上提一点点)
+    // 这样树的视觉中心会正好在屏幕正中间
+    const yOffset = -height * 0.02; 
 
     for (let i = 0; i < count; i++) {
         // 高度 h: 0(顶部) -> 1(底部)
