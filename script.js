@@ -15,7 +15,6 @@ let currentStateIndex = 0;
 let lastStateChangeTime = 0; 
 
 let rotationAngle = 0;
-// 判断是否为手机端
 let isMobile = window.innerWidth < 768;
 
 // --- 核心配置 ---
@@ -25,21 +24,35 @@ const config = {
         "圣诞快乐", 
         "幸福平安"
     ],
-    duration: 10000, // 10秒切换
+    duration: 10000, 
     
-    // [关键修改1] 针对手机和电脑设置不同的粒子参数
-    // 手机：粒子更多但更小，防糊；电脑：粒子适中偏大
+    // 保持之前的高清参数
     particleCount: isMobile ? 3500 : 2500, 
     particleSize: isMobile ? 1.5 : 2.2,   
     
-    // [关键修改2] 严格使用 Gemini/Google 官方品牌色 + 纯白
-    colors: [
-        '#4285F4', // Google Blue
-        '#EA4335', // Google Red
-        '#34A853', // Google Green
-        '#FBBC05', // Google Yellow
-        '#FFFFFF'  // Pure White (Sparkle)
+    // [关键修改1] 定义两套色板
+    
+    // 1. 圣诞树配色 (保留原本的 Google 节日彩色)
+    treeColors: [
+        '#4285F4', // Blue
+        '#EA4335', // Red
+        '#34A853', // Green
+        '#FBBC05', // Yellow
+        '#FFFFFF'  // White
     ],
+
+    // 2. 文字配色 (蓝色主调，简约风)
+    // 这里的颜色配比决定了蓝色的占比，我多加了几个蓝色，少加了白色
+    textColors: [
+        '#4285F4', // Google Blue (标准蓝) - 占多份
+        '#4285F4', 
+        '#4285F4', 
+        '#1967D2', // Dark Blue (深蓝，增加层次)
+        '#8AB4F8', // Light Blue (浅蓝，增加透亮感)
+        '#00FFFF', // Cyan (青色，提亮)
+        '#FFFFFF'  // White (星星点缀，极少)
+    ],
+
     transitionSpeed: 0.04,
     rotationSpeed: 0.005,
     depth: 800
@@ -49,12 +62,19 @@ function resize() {
     width = canvas.width = window.innerWidth;
     height = canvas.height = window.innerHeight;
     isMobile = width < 768;
-    // 窗口大小改变时，动态调整粒子大小
     config.particleSize = isMobile ? 1.5 : 2.2;
 }
 
-function getRandomColor() {
-    return config.colors[Math.floor(Math.random() * config.colors.length)];
+// [关键修改2] 修改获取颜色的函数，支持传入指定的色板
+function getRandomColor(colorArray) {
+    return colorArray[Math.floor(Math.random() * colorArray.length)];
+}
+
+// [关键修改3] 新增：批量切换所有粒子的颜色
+function switchParticleColors(colorArray) {
+    particles.forEach(p => {
+        p.color = getRandomColor(colorArray);
+    });
 }
 
 // ==========================================
@@ -67,16 +87,17 @@ class Particle {
         this.z = (Math.random() - 0.5) * 500;
         
         this.targetIndex = index;
-        // 粒子大小随机微调，增加层次感
         this.size = config.particleSize * (0.8 + Math.random() * 0.4);
-        this.color = getRandomColor();
+        
+        // 初始颜色：因为初始状态是树，所以用树的颜色
+        this.color = getRandomColor(config.treeColors);
+        
         this.waveOffset = Math.random() * 100;
     }
 
     update(time) {
         const stateName = states[currentStateIndex];
         let targetList = targets[stateName];
-        // 循环分配目标，确保所有粒子都有去处
         let t = targetList[this.targetIndex % targetList.length] || {x: 0, y: 0, z: 0};
 
         const tx = t.x;
@@ -85,7 +106,6 @@ class Particle {
 
         let rx, ry, rz;
 
-        // 只有树的状态旋转
         if (stateName === 'tree') {
             const cos = Math.cos(rotationAngle);
             const sin = Math.sin(rotationAngle);
@@ -98,16 +118,13 @@ class Particle {
             rz = tz;
         }
 
-        // 飞行逻辑
         this.x += (rx - this.x) * config.transitionSpeed;
         this.y += (ry - this.y) * config.transitionSpeed;
         this.z += (rz - this.z) * config.transitionSpeed;
 
-        // 波动逻辑
         const waveX = Math.sin(time * 0.002 + this.waveOffset) * 5;
         const waveY = Math.cos(time * 0.002 + this.waveOffset) * 5;
         
-        // 3D 投影
         const scale = config.depth / (config.depth + this.z);
         this.screenX = width / 2 + (this.x + waveX) * scale;
         this.screenY = height / 2 + (this.y + waveY) * scale;
@@ -119,12 +136,11 @@ class Particle {
         ctx.arc(this.screenX, this.screenY, this.screenSize, 0, Math.PI * 2);
         ctx.fillStyle = this.color;
         
-        // [关键修改3] 优化发光效果
-        // 手机上光晕太重会糊，所以手机上减小 blur，电脑上保持
+        // 保持之前的手机锐化逻辑
         if (isMobile) {
-            ctx.shadowBlur = 2; // 手机微弱光晕，保持锐利
+            ctx.shadowBlur = 2; 
         } else {
-            ctx.shadowBlur = 5; // 电脑光晕强一点
+            ctx.shadowBlur = 5; 
         }
         ctx.shadowColor = this.color;
         
@@ -147,7 +163,7 @@ function createTreePoints() {
         const p = i / count;
         const y = -heightRange/2 + p * heightRange + yOffset;
         const radius = maxRadius * p;
-        const angle = i * 0.6; // 稍微调整螺旋角度
+        const angle = i * 0.6; 
 
         targets.tree.push({
             x: Math.cos(angle) * radius,
@@ -160,14 +176,11 @@ function createTreePoints() {
 function createPointsForString(textStr) {
     const points = [];
     const vCanvas = document.createElement('canvas');
-    // 增加虚拟画布分辨率，让采样更精准
     const vSize = 1200; 
     vCanvas.width = vSize;
     vCanvas.height = vSize;
     const vCtx = vCanvas.getContext('2d');
 
-    // [关键修改4] 字体优化
-    // font-weight: 900 (最粗)，确保笔画够粗，能容纳更多粒子
     const fontSize = isMobile ? 300 : 250; 
     vCtx.font = `900 ${fontSize}px "Microsoft YaHei", "Heiti SC", sans-serif`;
     vCtx.fillStyle = '#fff';
@@ -177,11 +190,7 @@ function createPointsForString(textStr) {
     vCtx.fillText(textStr, vSize / 2, vSize / 2);
 
     const imageData = vCtx.getImageData(0, 0, vSize, vSize).data;
-    // 采样步长：步长越小，点越密。
-    // 手机上为了防糊，我们步长设小一点（密集），但粒子设小（防重叠）
     const step = 6; 
-
-    // 缩放逻辑：手机占宽 95%，电脑占 60%
     const widthRatio = isMobile ? 0.95 : 0.6; 
     const targetWidth = width * widthRatio;
     const scale = targetWidth / vSize;
@@ -189,7 +198,6 @@ function createPointsForString(textStr) {
     for (let y = 0; y < vSize; y += step) {
         for (let x = 0; x < vSize; x += step) {
             const alpha = imageData[(y * vSize + x) * 4 + 3];
-            // 只取完全不透明的点，保证边缘锐利
             if (alpha > 200) {
                 points.push({
                     x: (x - vSize/2) * scale,
@@ -200,10 +208,8 @@ function createPointsForString(textStr) {
         }
     }
     
-    // 随机打乱
     points.sort(() => Math.random() - 0.5);
 
-    // 兜底
     if (points.length === 0) {
         for (let i = 0; i < 100; i++) points.push({x:0, y:0, z:0});
     }
@@ -224,16 +230,28 @@ function animate(timestamp) {
     if (!lastStateChangeTime) lastStateChangeTime = timestamp;
     
     const elapsed = timestamp - lastStateChangeTime;
+    
+    // [关键修改4] 状态切换时的颜色控制
     if (elapsed > config.duration) {
         currentStateIndex = (currentStateIndex + 1) % states.length;
         lastStateChangeTime = timestamp;
+        
+        const nextState = states[currentStateIndex];
+        
+        // 核心逻辑：如果是树，切回彩色；如果是字，切成蓝色系
+        if (nextState === 'tree') {
+            switchParticleColors(config.treeColors);
+        } else {
+            // 所有文字状态 (text1, text2, text3) 都用蓝色系
+            switchParticleColors(config.textColors);
+        }
     }
 
     if (states[currentStateIndex] === 'tree') {
         rotationAngle += config.rotationSpeed;
     }
 
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)'; // 稍微加深残影清除，让画面更干净
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)'; 
     ctx.fillRect(0, 0, width, height);
 
     particles.forEach(p => {
@@ -252,7 +270,6 @@ function init() {
     initAllTargets();
     
     particles = [];
-    // 使用配置中的粒子数量
     for (let i = 0; i < config.particleCount; i++) {
         particles.push(new Particle(i));
     }
@@ -266,7 +283,6 @@ function init() {
 window.addEventListener('resize', () => {
     resize();
     initAllTargets();
-    // 窗口大改时重建粒子，确保数量适配
     particles = [];
     for (let i = 0; i < config.particleCount; i++) {
         particles.push(new Particle(i));
