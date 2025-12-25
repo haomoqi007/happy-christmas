@@ -43,7 +43,8 @@ const config = {
 
     transitionSpeed: 0.04,
     rotationSpeed: 0.005,
-    depth: 800
+    // [关键修复] 增加视距深度，防止大树因为离屏幕太近而消失
+    depth: 1500 
 };
 
 function resize() {
@@ -108,13 +109,19 @@ class Particle {
         const waveX = Math.sin(time * 0.002 + this.waveOffset) * 5;
         const waveY = Math.cos(time * 0.002 + this.waveOffset) * 5;
         
-        const scale = config.depth / (config.depth + this.z);
+        // 防止除以0或负数导致的闪烁/消失
+        const dist = config.depth + this.z;
+        const scale = (dist > 0) ? (config.depth / dist) : 0;
+
         this.screenX = width / 2 + (this.x + waveX) * scale;
         this.screenY = height / 2 + (this.y + waveY) * scale;
         this.screenSize = Math.max(0.1, this.size * scale);
     }
 
     draw() {
+        // 如果粒子在视线后方，不绘制
+        if (this.screenSize <= 0.1) return;
+
         ctx.beginPath();
         ctx.arc(this.screenX, this.screenY, this.screenSize, 0, Math.PI * 2);
         ctx.fillStyle = this.color;
@@ -135,59 +142,49 @@ class Particle {
 // 目标生成器
 // ==========================================
 
-// [⭐ 核心修复：树形生成算法]
+// [⭐ 绝对正确的正向树形算法]
 function createTreePoints() {
     targets.tree = [];
     const count = config.particleCount;
-    // 树的高度：占屏幕高度的 85%
     const treeHeight = height * 0.85; 
-    // 底部最宽处的半径
-    const maxBaseRadius = Math.min(width * 0.4, height * 0.35); 
-    // 整体向上移动一点，保持居中
+    const maxBaseRadius = Math.min(width * 0.35, height * 0.3); 
     const yOffset = -height * 0.1; 
 
     for (let i = 0; i < count; i++) {
-        // [关键] 高度分布算法
-        // 使用 sqrt(random) 让 h 分布偏向 1 (底部)。
-        // 这样底部的宽阔区域会有更多粒子，顶部的狭窄区域粒子较少，
-        // 完美解决“顶部太密、底部太疏”的问题。
-        const h = Math.sqrt(Math.random()); 
-        // h: 0 (树顶) -> 1 (树底)
+        // 1. 高度 h: 0(顶部) -> 1(底部)
+        // 使用 sqrt 让底部粒子多，顶部粒子少
+        const h = Math.sqrt(Math.random());
 
-        // 计算 Y 坐标：从 负(顶) 到 正(底)
+        // 2. Y坐标: 负数在上面，正数在下面
+        // h=0 -> y = 顶端; h=1 -> y = 底端
         const y = (h - 0.5) * treeHeight + yOffset;
 
-        // 计算基础半径：线性增长 (圆锥体)
-        // h=0 -> r=0; h=1 -> r=Max
+        // 3. 半径 r: 顶部窄，底部宽
+        // h=0 -> r=0 (尖); h=1 -> r=Max (宽)
         let r = maxBaseRadius * h;
 
-        // [关键] 分层纹理 (Layers)
-        // 增加 8 层波浪，模仿树枝伸出的感觉
+        // 4. 加入自然螺旋和分层
         const layers = 8;
-        // 使用 sin 波让半径忽大忽小
-        const layerEffect = 1 + 0.15 * Math.sin(h * layers * Math.PI * 2 + i * 0.1);
+        const layerEffect = 1 + 0.2 * Math.sin(h * layers * Math.PI * 2);
+        const spiralAngle = i * 0.1 + h * Math.PI * 6; // 螺旋因子
 
-        // [关键] 螺旋分布 (Spiral)
-        // 参考你发的图，粒子并不是杂乱的，而是有螺旋纹理
-        const angle = i * 0.1 + h * 10; 
-
-        // 最终半径：基础半径 * 分层效果 * 随机厚度(让树看起来厚实)
+        // 最终半径
         const finalRadius = r * layerEffect * (0.8 + 0.2 * Math.random());
 
         targets.tree.push({
-            x: Math.cos(angle) * finalRadius,
+            x: Math.cos(spiralAngle) * finalRadius,
             y: y, 
-            z: Math.sin(angle) * finalRadius
+            z: Math.sin(spiralAngle) * finalRadius
         });
     }
-    // 随机打乱
     targets.tree.sort(() => Math.random() - 0.5);
 }
 
 function createPointsForString(textItem) {
     const points = [];
+    // [关键修复] 之前这里漏了 const，导致报错
     const vSize = 1500; 
-    vCanvas = document.createElement('canvas');
+    const vCanvas = document.createElement('canvas'); 
     vCanvas.width = vSize;
     vCanvas.height = vSize;
     const vCtx = vCanvas.getContext('2d');
@@ -214,4 +211,97 @@ function createPointsForString(textItem) {
     const step = isMobile ? 5 : 6; 
 
     const availWidth = width * (isMobile ? 0.9 : 0.7);
-    const availHeight
+    const availHeight = height * (isMobile ? 0.8 : 0.7);
+    const scaleX = availWidth / vSize;
+    const scaleY = availHeight / vSize;
+    const scale = Math.min(scaleX, scaleY);
+
+    for (let y = 0; y < vSize; y += step) {
+        for (let x = 0; x < vSize; x += step) {
+            const alpha = imageData[(y * vSize + x) * 4 + 3];
+            if (alpha > 200) {
+                points.push({
+                    x: (x - vSize/2) * scale,
+                    y: (y - vSize/2) * scale,
+                    z: 0
+                });
+            }
+        }
+    }
+    
+    points.sort(() => Math.random() - 0.5);
+
+    if (points.length === 0) {
+        for (let i = 0; i < 100; i++) points.push({x:0, y:0, z:0});
+    }
+    return points;
+}
+
+function initAllTargets() {
+    createTreePoints();
+    targets.text1 = createPointsForString(config.texts[0]); 
+    targets.text2 = createPointsForString(config.texts[1]); 
+    targets.text3 = createPointsForString(config.texts[2]); 
+}
+
+// ==========================================
+// 动画循环
+// ==========================================
+function animate(timestamp) {
+    if (!lastStateChangeTime) lastStateChangeTime = timestamp;
+    
+    const elapsed = timestamp - lastStateChangeTime;
+    
+    if (elapsed > config.duration) {
+        currentStateIndex = (currentStateIndex + 1) % states.length;
+        lastStateChangeTime = timestamp;
+        
+        const nextState = states[currentStateIndex];
+        
+        if (nextState === 'tree') {
+            switchParticleColors(config.treeColors);
+        } else {
+            switchParticleColors(config.textColors);
+        }
+    }
+
+    if (states[currentStateIndex] === 'tree') {
+        rotationAngle += config.rotationSpeed;
+    }
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)'; 
+    ctx.fillRect(0, 0, width, height);
+
+    particles.forEach(p => {
+        p.update(timestamp);
+        p.draw();
+    });
+
+    requestAnimationFrame(animate);
+}
+
+function init() {
+    resize();
+    initAllTargets();
+    
+    particles = [];
+    for (let i = 0; i < config.particleCount; i++) {
+        particles.push(new Particle(i));
+    }
+    
+    currentStateIndex = 0;
+    lastStateChangeTime = 0;
+    rotationAngle = 0;
+    animate();
+}
+
+window.addEventListener('resize', () => {
+    resize();
+    initAllTargets();
+    particles = [];
+    for (let i = 0; i < config.particleCount; i++) {
+        particles.push(new Particle(i));
+    }
+});
+
+init();
